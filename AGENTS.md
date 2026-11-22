@@ -42,7 +42,7 @@ Bun workspaces:
 Every record has `id`, `createdAt`, `updatedAt`, `revision`, and `deletedAt`. Deletes are tombstones so another device can learn about them. Do not drop rows to mean "deleted".
 
 - Amounts are positive integers. `type` is `income`, `expense`, or `transfer`.
-- A transfer is one record: `accountId` is the source, `transferAccountId` is the destination. Monthly income, expense, and balance ignore transfers. `projectAccountBalances` moves the amount from one account to the other. An imported transfer may have a null destination until a later importer can pair it; that row still stays out of income and expense.
+- A transfer is one record: `accountId` is the source, `transferAccountId` is the destination. Monthly income, expense, and balance ignore transfers. `projectAccountBalances` moves the amount from one account to the other. Money Forward's CSV has no destination column. `applyImport` pairs two `振替=1` rows with the same absolute amount, the same date, opposite signs, and different `保有金融機関` into one transfer (the negative row is the source). A single negative row whose description is exactly another account's name uses that account. Anything else stays one-sided (`transferAccountId` null, shown as 振替先未設定) and still stays out of income and expense.
 - Categories have `kind` (`income` or `expense`) and optional `parentId` (Money Forward 中項目).
 - Accounts have `kind` (`cash`, `bank`, `card`, `emoney`, `securities`, `other`), optional `sourceId`, optional `externalAccountId`, and `openingBalanceYen` for a later balance screen.
 - `budgets` and `assetSnapshots` are stored and synced now and unused by the UI. Phase 3 and phase 4 should fill them instead of replacing the ledger.

@@ -36,7 +36,11 @@ describe('Money Forward CSV', () => {
     expect(parsed.transactions.find((row) => row.externalId === 'mf-move')).toMatchObject({
       type: 'transfer',
       amountYen: 20000,
+      amountSign: -1,
+      accountName: '銀行口座',
     })
+    expect(food?.amountSign).toBe(-1)
+    expect(parsed.transactions.find((row) => row.externalId === 'mf-pay')?.amountSign).toBe(1)
     expect(parsed.transactions.find((row) => row.externalId === 'mf-skip')?.include).toBe(false)
   })
 

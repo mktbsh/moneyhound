@@ -109,6 +109,7 @@ export function parseMfCsv(text: string, fileName: string): ImportParseResult {
     const normalized: NormalizedTransaction = {
       date,
       amountYen: Math.abs(amount),
+      amountSign: amount > 0 ? 1 : -1,
       type,
       description,
       memo,

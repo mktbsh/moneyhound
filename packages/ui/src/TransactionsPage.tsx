@@ -76,7 +76,9 @@ export function TransactionsPage({
                   · {accounts.get(transaction.accountId) ?? '口座'}
                   {transaction.transferAccountId
                     ? ` → ${accounts.get(transaction.transferAccountId) ?? '口座'}`
-                    : ''}
+                    : transaction.type === 'transfer'
+                      ? ' · 振替先未設定'
+                      : ''}
                   {transaction.memo && transaction.description ? ` · ${transaction.memo}` : ''}
                 </p>
               </div>
