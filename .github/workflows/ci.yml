@@ -24,6 +24,11 @@ jobs:
         with:
           bun-version: 1.4.5
 
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+
       - name: Install
         run: bun install --frozen-lockfile
 

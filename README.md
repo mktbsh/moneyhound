@@ -8,7 +8,7 @@ moneyhound は株式会社マネーフォワードとは関係がありません
 
 ## 開発
 
-Bun 1.4.5 が必要です。整形は `bun fmt`、静的チェックは oxlint です。この版の Bun には `bun fmt` はあり、組み込みの `bun lint` はありません。
+Bun 1.4.5 と Node.js 26.13.1 が必要です。型検査は `typescript@7.0.2`（Go 製の `tsc`）です。整形は `bun fmt`、静的チェックは oxlint です。この版の Bun には `bun fmt` はあり、組み込みの `bun lint` はありません。
 
 ```bash
 bun install

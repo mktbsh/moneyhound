@@ -21,7 +21,7 @@ bun run test:e2e  # Playwright via bunx, local-only, desktop and mobile
 bun run build     # typecheck and production build (apps/web/dist)
 ```
 
-Package manager is Bun 1.4.5 (`packageManager` and CI). Format with `bun fmt`. Lint with oxlint: Bun 1.4.5 has `bun fmt` and does not ship `bun lint` (`bun --help` lists `fmt` only, and `bun lint` looks for a package script). Do not add ESLint or Prettier.
+Package manager is Bun 1.4.5 (`packageManager` and CI). Typecheck uses `typescript@7.0.2` (`tsc` launches the native Go compiler). Node is 26.13.1 (`.node-version` and `engines`); CI installs that Node for Playwright. Format with `bun fmt`. Lint with oxlint: Bun 1.4.5 has `bun fmt` and does not ship `bun lint` (`bun --help` lists `fmt` only, and `bun lint` looks for a package script). Do not add ESLint or Prettier.
 
 `bun run check` does not run the browser tests. Run `bun run test:e2e` before a PR that changes UI or storage.
 
