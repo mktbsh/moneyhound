@@ -8,6 +8,12 @@ import type { ImportDelivery, TransactionType } from '../types'
 export interface NormalizedTransaction {
   date: string
   amountYen: number
+  /**
+   * Sign of the source amount before it was made absolute.
+   * For a Money Forward transfer, -1 means money leaves `accountName`
+   * and 1 means money arrives there. Income is 1 and expense is -1.
+   */
+  amountSign: -1 | 1
   type: TransactionType
   description: string
   memo: string

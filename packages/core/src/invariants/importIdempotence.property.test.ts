@@ -26,6 +26,7 @@ const text = fc
 const rowArb: fc.Arbitrary<NormalizedTransaction> = fc.record({
   date: fc.constantFrom('2026-04-02', '2026-04-15', '2026-05-01', '2026-03-31'),
   amountYen: fc.integer({ min: 1, max: 2_000_000 }),
+  amountSign: fc.constantFrom(-1 as const, 1 as const),
   type: fc.constantFrom('income', 'expense', 'transfer'),
   description: text,
   memo: fc.constant(''),
@@ -85,6 +86,7 @@ describe('applyImport match keys', () => {
       {
         date: '2026-04-02',
         amountYen: 1,
+        amountSign: 1,
         type: 'income',
         description: '',
         memo: '',
@@ -98,6 +100,7 @@ describe('applyImport match keys', () => {
       {
         date: '2026-04-02',
         amountYen: 1,
+        amountSign: 1,
         type: 'income',
         description: '',
         memo: '',

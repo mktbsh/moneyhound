@@ -51,7 +51,9 @@ export interface TransactionInput {
   amountYen: number
   type: TransactionType
   categoryId: string | null
-  accountId: string
+  /** Source. Null only for a transfer whose source is unknown. */
+  accountId: string | null
+  /** Destination. Null only for a transfer whose destination is unknown. */
   transferAccountId: string | null
   description: string
   memo: string
@@ -182,19 +184,34 @@ function parseTransaction(value: unknown): Transaction {
   if (typeof amountYen !== 'number' || !isYenAmount(amountYen))
     throw new LedgerError('invalid_amount')
   const origin = value.categoryOrigin
+  const type = oneOf(value.type, TX_TYPES)
+  const accountId = optionalString(value.accountId)
+  const transferAccountId = optionalString(value.transferAccountId)
+  if (type === 'transfer') checkTransferSides(type, accountId, transferAccountId)
+  else if (!accountId || transferAccountId) throw new LedgerError('invalid_ledger')
   return {
     ...entityFrom(value),
     date: requiredString(value.date, 'date'),
     amountYen,
-    type: oneOf(value.type, TX_TYPES),
+    type,
     categoryId: optionalString(value.categoryId),
     categoryOrigin: origin === null || origin === undefined ? null : oneOf(origin, ORIGINS),
-    accountId: requiredString(value.accountId, 'accountId'),
-    transferAccountId: optionalString(value.transferAccountId),
+    accountId,
+    transferAccountId,
     description: typeof value.description === 'string' ? value.description : '',
     memo: typeof value.memo === 'string' ? value.memo : '',
     source: parseSource(value.source),
   }
+}
+
+function checkTransferSides(
+  type: TransactionType,
+  accountId: string | null,
+  transferAccountId: string | null,
+): void {
+  if (type !== 'transfer') return
+  if (!accountId && !transferAccountId) throw new LedgerError('invalid_transfer')
+  if (accountId && accountId === transferAccountId) throw new LedgerError('invalid_transfer')
 }
 
 function parseImportSource(value: unknown): ImportSource {
@@ -319,11 +336,10 @@ function validateTransaction(ledger: Ledger, input: TransactionInput): Transacti
   if (!isIsoDate(input.date)) throw new LedgerError('invalid_date')
   if (!isYenAmount(input.amountYen)) throw new LedgerError('invalid_amount')
   if (!TX_TYPES.includes(input.type)) throw new LedgerError('invalid_type')
-  usableAccount(ledger, input.accountId)
   if (input.type === 'transfer') {
-    if (!input.transferAccountId) throw new LedgerError('invalid_transfer')
-    if (input.transferAccountId === input.accountId) throw new LedgerError('invalid_transfer')
-    usableAccount(ledger, input.transferAccountId)
+    checkTransferSides(input.type, input.accountId, input.transferAccountId)
+    if (input.accountId) usableAccount(ledger, input.accountId)
+    if (input.transferAccountId) usableAccount(ledger, input.transferAccountId)
     return {
       ...input,
       categoryId: null,
@@ -331,6 +347,8 @@ function validateTransaction(ledger: Ledger, input: TransactionInput): Transacti
       memo: cleanText(input.memo),
     }
   }
+  if (!input.accountId) throw new LedgerError('invalid_account')
+  usableAccount(ledger, input.accountId)
   if (!input.categoryId) throw new LedgerError('invalid_category')
   usableCategory(ledger, input.categoryId, input.type)
   return {

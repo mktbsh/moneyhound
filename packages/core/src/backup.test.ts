@@ -26,14 +26,14 @@ describe('backup', () => {
       LedgerError,
     )
     expect(() =>
-      importBackup(JSON.stringify({ app: 'moneyhound', schemaVersion: 2, ledger })),
+      importBackup(JSON.stringify({ app: 'moneyhound', schemaVersion: 1, ledger })),
     ).toThrowError(/unsupported_schema/)
   })
 
   it('fills reserved collections when they are omitted', () => {
     const seeded = seedLedger()
     const partial = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       seeded: true,
       accounts: seeded.accounts,
       categories: seeded.categories,

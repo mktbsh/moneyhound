@@ -12,6 +12,7 @@ import {
   type Ledger,
   type Transaction,
 } from '../types'
+import { planTransferRows } from './pairTransfers'
 import type { ImportParseResult, NormalizedTransaction } from './types'
 
 export interface ImportReport {
@@ -157,6 +158,16 @@ function kindOf(type: NormalizedTransaction['type']): CategoryKind {
   return type === 'income' ? 'income' : 'expense'
 }
 
+/** An outflow whose description is exactly another live account name. */
+function accountIdByName(ledger: Ledger, name: string, sourceAccountId: string): string | null {
+  const folded = fold(name)
+  if (!folded) return null
+  const account = ledger.accounts.find(
+    (item) => item.deletedAt === null && fold(item.name) === folded && item.id !== sourceAccountId,
+  )
+  return account?.id ?? null
+}
+
 function resolveCategory(
   ledger: Ledger,
   row: NormalizedTransaction,
@@ -239,7 +250,30 @@ export function applyImport(
   let current = ensureSource(ledger, parsed)
   const sourceId = `src_${parsed.adapterId}`
   const report: ImportReport = { ...EMPTY_REPORT }
-  for (const row of dedupe(parsed.transactions)) {
+  for (const planned of planTransferRows(dedupe(parsed.transactions))) {
+    const row = planned.row
+    if (planned.counterpart) {
+      const existing = findExisting(current, sourceId, row)
+      if (!existing || existing.deletedAt) {
+        report.skipped += 1
+        continue
+      }
+      current = {
+        ...current,
+        transactions: current.transactions.map((transaction) =>
+          transaction.id === existing.id
+            ? {
+                ...transaction,
+                deletedAt: clock.now,
+                updatedAt: clock.now,
+                revision: transaction.revision + 1,
+              }
+            : transaction,
+        ),
+      }
+      report.excluded += 1
+      continue
+    }
     const account = ensureAccount(current, row.accountName, sourceId, clock)
     current = account.ledger
     const category = resolveCategory(current, row, account.accountId, parsed.adapterId, clock)
@@ -269,6 +303,30 @@ export function applyImport(
     const categoryId =
       existing?.categoryOrigin === 'user' ? existing.categoryId : category.categoryId
     const categoryOrigin = existing?.categoryOrigin === 'user' ? 'user' : category.origin
+    let accountId: string | null = account.accountId
+    let transferAccountId: string | null = null
+    if (row.type === 'transfer') {
+      if (planned.destinationAccountName) {
+        const destination = ensureAccount(current, planned.destinationAccountName, sourceId, clock)
+        current = destination.ledger
+        if (destination.accountId !== account.accountId) transferAccountId = destination.accountId
+      } else if (row.amountSign < 0) {
+        transferAccountId =
+          existing?.transferAccountId && existing.transferAccountId !== account.accountId
+            ? existing.transferAccountId
+            : accountIdByName(current, row.description, account.accountId)
+      } else {
+        // Money arrived in 保有金融機関 and the source row is missing.
+        transferAccountId =
+          existing?.transferAccountId && existing.transferAccountId !== account.accountId
+            ? existing.transferAccountId
+            : account.accountId
+        accountId =
+          existing?.accountId && existing.accountId !== account.accountId
+            ? existing.accountId
+            : null
+      }
+    }
     const next = {
       updatedAt: existing ? existing.updatedAt : clock.now,
       deletedAt: null,
@@ -277,8 +335,8 @@ export function applyImport(
       type: row.type,
       categoryId,
       categoryOrigin,
-      accountId: account.accountId,
-      transferAccountId: null as string | null,
+      accountId,
+      transferAccountId,
       description: row.description,
       memo: row.memo,
       source: {

@@ -113,17 +113,18 @@ theorem income_splits_by_category (txs : List AggTxn) (cat : Option String) :
 
 /-
 Account projection. `projectAccountBalances` walks live accounts and, for each
-transfer, credits the destination only in the `else if` after the source debit.
-A transfer whose destination is null, or whose destination is the source, only
-debits the source. `addTransaction` rejects a source equal to its destination;
-`applyImport` stores imported transfers with a null destination.
+transfer, debits `accountId` when it is set and credits `transferAccountId`
+when it is set. The `else if` means a row whose two ids are equal only debits;
+`assertLedger` and `addTransaction` reject that shape, and they reject a
+transfer with both ids null. A null destination only debits the source. A null
+source only credits the destination.
 -/
 
 structure BalTxn where
   amount : Int
   kind : Kind
   deleted : Bool
-  account : Nat
+  account : Option Nat
   dest : Option Nat
   deriving DecidableEq, Repr
 
@@ -136,8 +137,8 @@ inside `projectAccountBalances`. -/
 def rowNet (t : BalTxn) (a : Nat) : Int :=
   if t.deleted || t.kind != .transfer then 0
   else
-    (if t.dest = some a ∧ t.account ≠ a then t.amount else 0) -
-      (if t.account = a then t.amount else 0)
+    (if t.dest = some a ∧ t.account ≠ some a then t.amount else 0) -
+      (if t.account = some a then t.amount else 0)
 
 def accountNet : List BalTxn → Nat → Int
   | [], _ => 0
@@ -154,11 +155,11 @@ def netOfRow : List Nat → BalTxn → Int
 
 def outSum : List Nat → BalTxn → Int
   | [], _ => 0
-  | a :: as, t => (if t.account = a then t.amount else 0) + outSum as t
+  | a :: as, t => (if t.account = some a then t.amount else 0) + outSum as t
 
 def inSum : List Nat → BalTxn → Int
   | [], _ => 0
-  | a :: as, t => (if t.dest = some a ∧ t.account ≠ a then t.amount else 0) + inSum as t
+  | a :: as, t => (if t.dest = some a ∧ t.account ≠ some a then t.amount else 0) + inSum as t
 
 /-- Global transfer contribution of one transaction. -/
 def contrib (ids : List Nat) (t : BalTxn) : Int :=
@@ -166,9 +167,12 @@ def contrib (ids : List Nat) (t : BalTxn) : Int :=
   else
     let inn :=
       match t.dest with
-      | some d => if ids.contains d && d ≠ t.account then t.amount else 0
+      | some d => if ids.contains d && t.account ≠ some d then t.amount else 0
       | none => 0
-    let out := if ids.contains t.account then t.amount else 0
+    let out :=
+      match t.account with
+      | some s => if ids.contains s then t.amount else 0
+      | none => 0
     inn - out
 
 def contribSum : List Nat → List BalTxn → Int
@@ -178,9 +182,9 @@ def contribSum : List Nat → List BalTxn → Int
 /-- Both ends are distinct live accounts. -/
 def paired (ids : List Nat) (t : BalTxn) : Bool :=
   !t.deleted && t.kind == .transfer &&
-    match t.dest with
-    | some d => d != t.account && ids.contains t.account && ids.contains d
-    | none => false
+    match t.account, t.dest with
+    | some s, some d => d != s && ids.contains s && ids.contains d
+    | _, _ => false
 
 def transferOk (ids : List Nat) (t : BalTxn) : Bool :=
   t.deleted || t.kind != .transfer || paired ids t
@@ -198,13 +202,26 @@ theorem netOfRow_eq_in_out (ids : List Nat) (t : BalTxn) (hd : t.deleted = false
     omega
 
 theorem outSum_indicator (ids : List Nat) (t : BalTxn) (h : nodup ids = true) :
-    outSum ids t = if ids.contains t.account then t.amount else 0 := by
-  induction ids <;> grind [outSum, nodup]
+    outSum ids t =
+      match t.account with
+      | some s => if ids.contains s then t.amount else 0
+      | none => 0 := by
+  induction ids with
+  | nil => cases t.account <;> simp [outSum]
+  | cons a as ih =>
+    simp only [nodup, Bool.and_eq_true, Bool.not_eq_true'] at h
+    have ih' := ih h.2
+    cases hacc : t.account with
+    | none =>
+      simp [outSum, hacc] at ih'
+      simp [outSum, hacc, ih']
+    | some s =>
+      by_cases ha : a = s <;> grind [outSum]
 
 theorem inSum_indicator (ids : List Nat) (t : BalTxn) (h : nodup ids = true) :
     inSum ids t =
       match t.dest with
-      | some d => if ids.contains d && d ≠ t.account then t.amount else 0
+      | some d => if ids.contains d && t.account ≠ some d then t.amount else 0
       | none => 0 := by
   induction ids with
   | nil => cases t.dest <;> simp [inSum]
@@ -216,7 +233,7 @@ theorem inSum_indicator (ids : List Nat) (t : BalTxn) (h : nodup ids = true) :
       simp [inSum, hdest] at ih'
       simp [inSum, hdest, ih']
     | some d =>
-      by_cases ha : a = d <;> by_cases hacc : d = t.account <;>
+      by_cases ha : a = d <;> by_cases hacc : t.account = some d <;>
         grind [inSum]
 
 theorem netOfRow_zero_deleted (ids : List Nat) (t : BalTxn) (hd : t.deleted = true) :
@@ -270,12 +287,22 @@ theorem paired_transfers_neutral (ids : List Nat) (txs : List BalTxn) (hn : nodu
     (hp : allTransferOk ids txs = true) : net ids txs = 0 := by
   grind [net_eq_contribSum, contribSum_zero]
 
-/-- A one-sided transfer (null destination) only leaves the source account. -/
-theorem one_sided_transfer_debits_source (ids : List Nat) (t : BalTxn) (hn : nodup ids = true)
-    (hd : t.deleted = false) (hk : t.kind = .transfer) (hdest : t.dest = none)
-    (hsrc : ids.contains t.account = true) : net ids [t] = -t.amount := by
+/-- A one-sided outflow (null destination, known source) only leaves the source. -/
+theorem one_sided_transfer_debits_source (ids : List Nat) (t : BalTxn) (s : Nat)
+    (hn : nodup ids = true) (hd : t.deleted = false) (hk : t.kind = .transfer)
+    (hdest : t.dest = none) (hsrc : t.account = some s) (hlive : ids.contains s = true) :
+    net ids [t] = -t.amount := by
   rw [net_split, net_empty, netOfRow_eq_contrib ids t hn]
-  have hmem : t.account ∈ ids := by simpa using hsrc
-  simp [contrib, hd, hk, hdest, hmem]
+  have hmem : s ∈ ids := by simpa using hlive
+  simp [contrib, hd, hk, hdest, hsrc, hmem]
+
+/-- A one-sided inflow (null source, known destination) only enters that account. -/
+theorem one_sided_transfer_credits_destination (ids : List Nat) (t : BalTxn) (d : Nat)
+    (hn : nodup ids = true) (hd : t.deleted = false) (hk : t.kind = .transfer)
+    (hsrc : t.account = none) (hdest : t.dest = some d) (hlive : ids.contains d = true) :
+    net ids [t] = t.amount := by
+  rw [net_split, net_empty, netOfRow_eq_contrib ids t hn]
+  have hmem : d ∈ ids := by simpa using hlive
+  simp [contrib, hd, hk, hsrc, hdest, hmem]
 
 end Moneyhound.Aggregate

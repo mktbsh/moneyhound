@@ -73,10 +73,7 @@ export function TransactionsPage({
                   {formatIsoDate(transaction.date)} ·{' '}
                   {names.get(transaction.categoryId ?? '') ??
                     (transaction.type === 'transfer' ? '振替' : '未分類')}{' '}
-                  · {accounts.get(transaction.accountId) ?? '口座'}
-                  {transaction.transferAccountId
-                    ? ` → ${accounts.get(transaction.transferAccountId) ?? '口座'}`
-                    : ''}
+                  · {accountPhrase(transaction, accounts)}
                   {transaction.memo && transaction.description ? ` · ${transaction.memo}` : ''}
                 </p>
               </div>
@@ -141,6 +138,17 @@ export function TransactionsPage({
   )
 }
 
+function accountPhrase(transaction: Transaction, accounts: Map<string, string>): string {
+  const source = transaction.accountId
+    ? (accounts.get(transaction.accountId) ?? '口座')
+    : '振替元未設定'
+  if (transaction.type !== 'transfer') return source
+  const destination = transaction.transferAccountId
+    ? (accounts.get(transaction.transferAccountId) ?? '口座')
+    : '振替先未設定'
+  return `${source} → ${destination}`
+}
+
 function labelOf(type: TransactionType): string {
   if (type === 'income') return '収入'
   if (type === 'transfer') return '振替'
@@ -170,10 +178,10 @@ function TransactionDialog({
   const [amount, setAmount] = useState(existing ? String(existing.amountYen) : '')
   const [categoryId, setCategoryId] = useState(existing?.categoryId ?? '')
   const [accountId, setAccountId] = useState(
-    existing?.accountId ?? activeAccounts(ledger)[0]?.id ?? '',
+    existing ? (existing.accountId ?? '') : (activeAccounts(ledger)[0]?.id ?? ''),
   )
   const [transferAccountId, setTransferAccountId] = useState(
-    existing?.transferAccountId ?? activeAccounts(ledger)[1]?.id ?? '',
+    existing ? (existing.transferAccountId ?? '') : (activeAccounts(ledger)[1]?.id ?? ''),
   )
   const [description, setDescription] = useState(existing?.description ?? '')
   const [memo, setMemo] = useState(existing?.memo ?? '')
@@ -185,9 +193,10 @@ function TransactionDialog({
     ? categoryId
     : (categories[0]?.id ?? '')
   const transferChoices = accounts.filter((account) => account.id !== accountId)
-  const chosenTransfer = transferChoices.some((account) => account.id === transferAccountId)
-    ? transferAccountId
-    : (transferChoices[0]?.id ?? '')
+  const chosenTransfer =
+    transferAccountId === '' || transferChoices.some((account) => account.id === transferAccountId)
+      ? transferAccountId
+      : (transferChoices[0]?.id ?? '')
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault()
@@ -196,12 +205,20 @@ function TransactionDialog({
       setError('金額は1円以上の整数で入力してください。')
       return
     }
+    if (type !== 'transfer' && !accountId) {
+      setError('口座を選んでください。')
+      return
+    }
+    if (type === 'transfer' && !accountId && !chosenTransfer) {
+      setError('振替元か振替先を選んでください。')
+      return
+    }
     const input: TransactionInput = {
       date,
       amountYen: parsed,
       type,
       categoryId: type === 'transfer' ? null : chosenCategory || null,
-      accountId,
+      accountId: accountId || null,
       transferAccountId: type === 'transfer' ? chosenTransfer || null : null,
       description,
       memo,
@@ -286,6 +303,7 @@ function TransactionDialog({
               value={accountId}
               onChange={(event) => setAccountId(event.target.value)}
             >
+              {type === 'transfer' ? <option value="">振替元未設定</option> : null}
               {accounts.map((account) => (
                 <option key={account.id} value={account.id}>
                   {account.name}
@@ -301,6 +319,7 @@ function TransactionDialog({
                 value={chosenTransfer}
                 onChange={(event) => setTransferAccountId(event.target.value)}
               >
+                <option value="">振替先未設定</option>
                 {transferChoices.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
