@@ -73,12 +73,7 @@ export function TransactionsPage({
                   {formatIsoDate(transaction.date)} ·{' '}
                   {names.get(transaction.categoryId ?? '') ??
                     (transaction.type === 'transfer' ? '振替' : '未分類')}{' '}
-                  · {accounts.get(transaction.accountId) ?? '口座'}
-                  {transaction.transferAccountId
-                    ? ` → ${accounts.get(transaction.transferAccountId) ?? '口座'}`
-                    : transaction.type === 'transfer'
-                      ? ' · 振替先未設定'
-                      : ''}
+                  · {accountPhrase(transaction, accounts)}
                   {transaction.memo && transaction.description ? ` · ${transaction.memo}` : ''}
                 </p>
               </div>
@@ -143,6 +138,14 @@ export function TransactionsPage({
   )
 }
 
+function accountPhrase(transaction: Transaction, accounts: Map<string, string>): string {
+  const name = accounts.get(transaction.accountId) ?? '口座'
+  if (transaction.type !== 'transfer') return name
+  if (transaction.transferAccountId === transaction.accountId) return `振替元未設定 → ${name}`
+  if (!transaction.transferAccountId) return `${name} · 振替先未設定`
+  return `${name} → ${accounts.get(transaction.transferAccountId) ?? '口座'}`
+}
+
 function labelOf(type: TransactionType): string {
   if (type === 'income') return '収入'
   if (type === 'transfer') return '振替'
@@ -171,11 +174,15 @@ function TransactionDialog({
   const [date, setDate] = useState(existing?.date ?? defaultDateForMonth(yearMonth))
   const [amount, setAmount] = useState(existing ? String(existing.amountYen) : '')
   const [categoryId, setCategoryId] = useState(existing?.categoryId ?? '')
+  const unknownSource =
+    existing?.type === 'transfer' && existing.transferAccountId === existing.accountId
   const [accountId, setAccountId] = useState(
-    existing?.accountId ?? activeAccounts(ledger)[0]?.id ?? '',
+    unknownSource ? '' : (existing?.accountId ?? activeAccounts(ledger)[0]?.id ?? ''),
   )
   const [transferAccountId, setTransferAccountId] = useState(
-    existing?.transferAccountId ?? activeAccounts(ledger)[1]?.id ?? '',
+    unknownSource
+      ? existing.accountId
+      : (existing?.transferAccountId ?? activeAccounts(ledger)[1]?.id ?? ''),
   )
   const [description, setDescription] = useState(existing?.description ?? '')
   const [memo, setMemo] = useState(existing?.memo ?? '')
@@ -196,6 +203,10 @@ function TransactionDialog({
     const parsed = parseYen(amount)
     if (parsed === null || parsed <= 0) {
       setError('金額は1円以上の整数で入力してください。')
+      return
+    }
+    if (type === 'transfer' && !accountId) {
+      setError('出どころを選んでください。')
       return
     }
     const input: TransactionInput = {
@@ -288,6 +299,7 @@ function TransactionDialog({
               value={accountId}
               onChange={(event) => setAccountId(event.target.value)}
             >
+              {accountId === '' ? <option value="">振替元未設定</option> : null}
               {accounts.map((account) => (
                 <option key={account.id} value={account.id}>
                   {account.name}

@@ -116,4 +116,59 @@ describe('imported transfer pairs', () => {
       { numRuns: RUNS },
     )
   })
+
+  it('credits a lone inflow and debits a lone outflow', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            amountYen: fc.integer({ min: 1, max: 50_000 }),
+            direction: fc.constantFrom('in' as const, 'out' as const),
+          }),
+          { minLength: 1, maxLength: 6 },
+        ),
+        (specs) => {
+          const rows = specs.map((spec, index) =>
+            transferRow({
+              id: `${spec.direction}-${index}`,
+              accountName: `口座${index}`,
+              amountYen: spec.amountYen,
+              amountSign: spec.direction === 'in' ? 1 : -1,
+              date: `2026-04-${String(index + 1).padStart(2, '0')}`,
+              description: '振替',
+            }),
+          )
+          const parsed = {
+            adapterId: 'mf-csv',
+            fileName: 'lones.csv',
+            transactions: rows,
+            errors: [],
+          }
+          const first = applyImport(emptyLedger(), parsed, clock('c'))
+          const april = summarizeMonth(first.ledger, '2026-04')
+          expect(april.incomeYen).toBe(0)
+          expect(april.expenseYen).toBe(0)
+          const flows = projectAccountBalances(first.ledger)
+          specs.forEach((spec, index) => {
+            const account = first.ledger.accounts.find((item) => item.name === `口座${index}`)
+            const flow = flows.find((item) => item.accountId === account?.id)
+            const stored = first.ledger.transactions.find(
+              (transaction) => transaction.source.externalId === `${spec.direction}-${index}`,
+            )
+            if (spec.direction === 'in') {
+              expect(stored?.transferAccountId).toBe(account?.id)
+              expect(flow?.balanceYen).toBe(spec.amountYen)
+            } else {
+              expect(stored?.transferAccountId).toBeNull()
+              expect(flow?.balanceYen).toBe(-spec.amountYen)
+            }
+          })
+          const second = applyImport(first.ledger, parsed, clock('d'))
+          expect(second.report.inserted).toBe(0)
+          expect(canonical(second.ledger)).toBe(canonical(first.ledger))
+        },
+      ),
+      { numRuns: RUNS },
+    )
+  })
 })

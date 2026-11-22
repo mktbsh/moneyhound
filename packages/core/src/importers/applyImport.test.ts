@@ -155,6 +155,44 @@ describe('applyImport', () => {
     ).toBe(card?.id)
   })
 
+  it('credits a lone inflow and debits a lone outflow', () => {
+    const csv = `計算対象,日付,内容,金額（円）,保有金融機関,大項目,中項目,メモ,振替,ID
+1,2026/04/06,給料日の移動,8000,銀行口座,未分類,未分類,,1,mf-in
+1,2026/04/07,引き出し,-1500,現金,未分類,未分類,,1,mf-out
+`
+    const parsed = parseMfCsv(csv, 'mf.csv')
+    const first = applyImport(seedLedger(), parsed, clock())
+    const inflow = first.ledger.transactions.find(
+      (transaction) => transaction.source.externalId === 'mf-in',
+    )
+    const outflow = first.ledger.transactions.find(
+      (transaction) => transaction.source.externalId === 'mf-out',
+    )
+    const bank = first.ledger.accounts.find((account) => account.name === '銀行口座')
+    const cash = first.ledger.accounts.find((account) => account.name === '現金')
+    expect(inflow?.accountId).toBe(bank?.id)
+    expect(inflow?.transferAccountId).toBe(bank?.id)
+    expect(outflow?.accountId).toBe(cash?.id)
+    expect(outflow?.transferAccountId).toBeNull()
+    const april = summarizeMonth(first.ledger, '2026-04')
+    expect(april.incomeYen).toBe(0)
+    expect(april.expenseYen).toBe(0)
+    const flows = Object.fromEntries(
+      projectAccountBalances(first.ledger).map((flow) => [flow.accountId, flow]),
+    )
+    expect(flows[bank!.id]?.transferInYen).toBe(8000)
+    expect(flows[bank!.id]?.balanceYen).toBe(8000)
+    expect(flows[cash!.id]?.transferOutYen).toBe(1500)
+    expect(flows[cash!.id]?.balanceYen).toBe(-1500)
+    const second = applyImport(first.ledger, parsed, clock())
+    expect(second.report.inserted).toBe(0)
+    expect(second.report.updated).toBe(0)
+    expect(
+      second.ledger.transactions.find((transaction) => transaction.source.externalId === 'mf-in')
+        ?.transferAccountId,
+    ).toBe(bank?.id)
+  })
+
   it('uses an existing account when a lone transfer description names it', () => {
     const csv = `計算対象,日付,内容,金額（円）,保有金融機関,大項目,中項目,メモ,振替,ID
 1,2026/04/10,現金,-4000,銀行口座,未分類,未分類,,1,mf-cash

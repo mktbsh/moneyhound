@@ -109,4 +109,16 @@ theorem plan_idempotent_without_inflows (rows : List Row)
     (h : ∀ row, row ∈ rows → row.side = .out) : plan rows = rows := by
   simp [plan, planAux_out_only (rows.length + 1) rows h]
 
+/-- Effect on 保有金融機関 of a row that has no mate.
+`projectAccountBalances` debits a lone outflow (`transferAccountId` null).
+A lone inflow stores the same account as both ids, and that branch credits it. -/
+def loneEffect (side : Side) (amount : Nat) : Int :=
+  if side == .inn then ↑amount else -↑amount
+
+theorem lone_inflow_credits (amount : Nat) : loneEffect .inn amount = ↑amount := by
+  simp [loneEffect]
+
+theorem lone_outflow_debits (amount : Nat) : loneEffect .out amount = -↑amount := by
+  simp [loneEffect]
+
 end Moneyhound.TransferPair

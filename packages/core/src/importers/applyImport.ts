@@ -309,10 +309,14 @@ export function applyImport(
         const destination = ensureAccount(current, planned.destinationAccountName, sourceId, clock)
         current = destination.ledger
         if (destination.accountId !== account.accountId) transferAccountId = destination.accountId
-      } else if (existing?.transferAccountId) {
+      } else if (existing?.transferAccountId && existing.transferAccountId !== account.accountId) {
         transferAccountId = existing.transferAccountId
       } else if (row.amountSign < 0) {
         transferAccountId = accountIdByName(current, row.description, account.accountId)
+      } else {
+        // Money arrived in this account and the source row is missing.
+        // The same id in both fields credits the account. See projectAccountBalances.
+        transferAccountId = account.accountId
       }
     }
     const next = {

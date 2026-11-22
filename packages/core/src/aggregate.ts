@@ -76,7 +76,11 @@ export function summarizeMonth(ledger: Ledger, yearMonth: string): MonthSummary 
 
 /**
  * Account balances for a later asset screen.
- * A one-sided imported transfer (no destination) only leaves the source account.
+ * A transfer debits `accountId` and credits `transferAccountId`.
+ * A null destination only debits the source.
+ * An imported inflow with an unknown source stores the same account in both
+ * fields. That account is credited and not debited. `addTransaction` rejects
+ * that shape; only import writes it.
  */
 export function projectAccountBalances(ledger: Ledger): AccountFlow[] {
   return ledger.accounts
@@ -91,7 +95,11 @@ export function projectAccountBalances(ledger: Ledger): AccountFlow[] {
           incomeYen += transaction.amountYen
         } else if (transaction.type === 'expense' && transaction.accountId === account.id) {
           expenseYen += transaction.amountYen
-        } else if (transaction.type === 'transfer' && transaction.accountId === account.id) {
+        } else if (
+          transaction.type === 'transfer' &&
+          transaction.accountId === account.id &&
+          transaction.transferAccountId !== account.id
+        ) {
           transferOutYen += transaction.amountYen
         } else if (
           transaction.type === 'transfer' &&

@@ -70,7 +70,10 @@ export interface Transaction extends Entity {
   categoryOrigin: CategoryOrigin | null
   /** Account the money leaves (expense, transfer) or enters (income). */
   accountId: string
-  /** Destination account for a transfer. Null when an import has not paired one. */
+  /**
+   * Destination account for a transfer. Null when an imported outflow has no
+   * destination. Equal to `accountId` when an imported inflow has no known source.
+   */
   transferAccountId: string | null
   /** Payee or statement description. Category rules read this. */
   description: string
