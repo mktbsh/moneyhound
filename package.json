@@ -17,12 +17,14 @@
     "typecheck": "tsc -p packages/core/tsconfig.json && tsc -p packages/ui/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p tsconfig.e2e.json",
     "test": "bun test packages apps",
     "test:e2e": "bunx playwright test",
-    "check": "bun fmt --check --no-script && oxlint . && bun run typecheck && bun test packages apps"
+    "check": "bun fmt --check --no-script && oxlint . && bun run typecheck && bun test packages apps",
+    "verify:formal": "bun test packages/core/src/invariants && cd verification/lean && lake build"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
     "@types/node": "26.6.6",
     "bun-types": "^1.4.5",
+    "fast-check": "4.11.0",
     "oxlint": "^1.94.0",
     "typescript": "7.0.2"
   }
