@@ -7,7 +7,7 @@ description: Use when changing packages/core money calculations (applyImport, su
 
 moneyhound's pure calculation core is checked two ways that must stay paired. Lean proves a spec model. fast-check holds the real TypeScript functions to the same property. Lean does not read the TypeScript.
 
-Sync commit: `047c3390fa6de06e87d9a6553109eba05c388e8d`
+Sync commit: `e60eb41bc3312c5f6e1bf66dec3551f383e08db4`
 
 That commit is the `packages/core` and `verification/lean` revision `bun run verify:formal` passed against. Do not move it until the command passes again after an intentional behavior change. A failing proof or property test is not a reason to advance this SHA.
 
