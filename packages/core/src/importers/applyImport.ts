@@ -303,20 +303,28 @@ export function applyImport(
     const categoryId =
       existing?.categoryOrigin === 'user' ? existing.categoryId : category.categoryId
     const categoryOrigin = existing?.categoryOrigin === 'user' ? 'user' : category.origin
+    let accountId: string | null = account.accountId
     let transferAccountId: string | null = null
     if (row.type === 'transfer') {
       if (planned.destinationAccountName) {
         const destination = ensureAccount(current, planned.destinationAccountName, sourceId, clock)
         current = destination.ledger
         if (destination.accountId !== account.accountId) transferAccountId = destination.accountId
-      } else if (existing?.transferAccountId && existing.transferAccountId !== account.accountId) {
-        transferAccountId = existing.transferAccountId
       } else if (row.amountSign < 0) {
-        transferAccountId = accountIdByName(current, row.description, account.accountId)
+        transferAccountId =
+          existing?.transferAccountId && existing.transferAccountId !== account.accountId
+            ? existing.transferAccountId
+            : accountIdByName(current, row.description, account.accountId)
       } else {
-        // Money arrived in this account and the source row is missing.
-        // The same id in both fields credits the account. See projectAccountBalances.
-        transferAccountId = account.accountId
+        // Money arrived in 保有金融機関 and the source row is missing.
+        transferAccountId =
+          existing?.transferAccountId && existing.transferAccountId !== account.accountId
+            ? existing.transferAccountId
+            : account.accountId
+        accountId =
+          existing?.accountId && existing.accountId !== account.accountId
+            ? existing.accountId
+            : null
       }
     }
     const next = {
@@ -327,7 +335,7 @@ export function applyImport(
       type: row.type,
       categoryId,
       categoryOrigin,
-      accountId: account.accountId,
+      accountId,
       transferAccountId,
       description: row.description,
       memo: row.memo,

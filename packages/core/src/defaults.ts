@@ -1,4 +1,4 @@
-import { SEED_TIME, type Account, type Category, type Ledger } from './types'
+import { SCHEMA_VERSION, SEED_TIME, type Account, type Category, type Ledger } from './types'
 
 interface SeedCategory {
   id: string
@@ -65,7 +65,7 @@ function seedAccount(id: string, name: string, kind: Account['kind']): Account {
 
 export function emptyLedger(): Ledger {
   return {
-    schemaVersion: 1,
+    schemaVersion: SCHEMA_VERSION,
     seeded: false,
     accounts: [],
     categories: [],

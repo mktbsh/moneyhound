@@ -11,7 +11,9 @@ that matches amount, day, and a different account. That is the order in the
 Money Forward sample generator (outflow row, then inflow row).
 
 `projectAccountBalances` in `packages/core/src/aggregate.ts` debits `accountId`
-and credits `transferAccountId`. A paired import therefore contributes 0.
+when it is set and credits `transferAccountId` when it is set. A paired import
+therefore contributes 0. A lone outflow stores a null destination. A lone inflow
+stores a null source.
 -/
 
 namespace Moneyhound.TransferPair
@@ -110,8 +112,8 @@ theorem plan_idempotent_without_inflows (rows : List Row)
   simp [plan, planAux_out_only (rows.length + 1) rows h]
 
 /-- Effect on 保有金融機関 of a row that has no mate.
-`projectAccountBalances` debits a lone outflow (`transferAccountId` null).
-A lone inflow stores the same account as both ids, and that branch credits it. -/
+A lone outflow has a null destination and is debited.
+A lone inflow has a null source and is credited. -/
 def loneEffect (side : Side) (amount : Nat) : Int :=
   if side == .inn then ↑amount else -↑amount
 

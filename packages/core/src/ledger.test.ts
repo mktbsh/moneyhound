@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test'
-import { addTransaction, deleteTransaction, seedLedger, updateTransaction } from './ledger'
+import {
+  addTransaction,
+  assertLedger,
+  deleteTransaction,
+  seedLedger,
+  updateTransaction,
+} from './ledger'
 
 const input = {
   date: '2026-04-02',
@@ -45,5 +51,37 @@ describe('ledger mutations', () => {
         { now: '2026-04-02T00:00:00.000Z', id: () => 'tx' },
       ),
     ).toThrow(/invalid_transfer/)
+  })
+
+  it('allows one missing transfer side and rejects a transfer with neither side', () => {
+    const clock = { now: '2026-04-02T00:00:00.000Z', id: () => 'tx' }
+    const inflow = addTransaction(
+      seedLedger(),
+      {
+        ...input,
+        type: 'transfer',
+        categoryId: null,
+        accountId: null,
+        transferAccountId: 'acct_bank',
+      },
+      clock,
+    )
+    expect(inflow.transactions[0]?.accountId).toBeNull()
+    expect(inflow.transactions[0]?.transferAccountId).toBe('acct_bank')
+    expect(assertLedger(JSON.parse(JSON.stringify(inflow))).schemaVersion).toBe(2)
+    expect(() =>
+      addTransaction(
+        seedLedger(),
+        {
+          ...input,
+          type: 'transfer',
+          categoryId: null,
+          accountId: null,
+          transferAccountId: null,
+        },
+        clock,
+      ),
+    ).toThrow(/invalid_transfer/)
+    expect(() => assertLedger({ ...inflow, schemaVersion: 1 })).toThrow(/unsupported_schema/)
   })
 })

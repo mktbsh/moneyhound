@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1 as const
+export const SCHEMA_VERSION = 2 as const
 export const APP_ID = 'moneyhound' as const
 export const MANUAL_SOURCE_ID = 'manual' as const
 
@@ -68,11 +68,16 @@ export interface Transaction extends Entity {
    * Transfers have no category.
    */
   categoryOrigin: CategoryOrigin | null
-  /** Account the money leaves (expense, transfer) or enters (income). */
-  accountId: string
+  /**
+   * Account the money leaves (expense) or enters (income).
+   * For a transfer, the source. Null when an imported inflow has no known source.
+   * Income and expense always set this.
+   */
+  accountId: string | null
   /**
    * Destination account for a transfer. Null when an imported outflow has no
-   * destination. Equal to `accountId` when an imported inflow has no known source.
+   * destination. A transfer must set at least one of `accountId` and this field,
+   * and the two ids must differ when both are set.
    */
   transferAccountId: string | null
   /** Payee or statement description. Category rules read this. */

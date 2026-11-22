@@ -1,5 +1,5 @@
 import { canonical } from './canonical'
-import type { Entity, Ledger } from './types'
+import { SCHEMA_VERSION, type Entity, type Ledger } from './types'
 
 export type LedgerCollection =
   | 'accounts'
@@ -157,7 +157,7 @@ export function mergeLedgers(
   )
   return {
     ledger: {
-      schemaVersion: 1,
+      schemaVersion: SCHEMA_VERSION,
       seeded: local.seeded || remote.seeded || Boolean(base?.seeded),
       accounts: accounts.records,
       categories: categories.records,

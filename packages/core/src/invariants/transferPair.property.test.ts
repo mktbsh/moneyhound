@@ -156,9 +156,11 @@ describe('imported transfer pairs', () => {
               (transaction) => transaction.source.externalId === `${spec.direction}-${index}`,
             )
             if (spec.direction === 'in') {
+              expect(stored?.accountId).toBeNull()
               expect(stored?.transferAccountId).toBe(account?.id)
               expect(flow?.balanceYen).toBe(spec.amountYen)
             } else {
+              expect(stored?.accountId).toBe(account?.id)
               expect(stored?.transferAccountId).toBeNull()
               expect(flow?.balanceYen).toBe(-spec.amountYen)
             }

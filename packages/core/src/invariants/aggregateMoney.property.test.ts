@@ -9,7 +9,8 @@ import type { Account, Ledger, Transaction } from '../types'
  * `verification/lean/Moneyhound/Aggregate.lean`:
  * transfers and tombstones stay out of income, expense, and balance;
  * category buckets add up to those totals in exact integer yen;
- * paired transfers are balance-neutral; a null destination only debits the source.
+ * paired transfers are balance-neutral; a null destination only debits the source;
+ * a null source only credits the destination.
  */
 
 const RUNS = 80
@@ -24,7 +25,7 @@ function transaction(input: {
   type: Transaction['type']
   deleted: boolean
   categoryId: string | null
-  accountId: string
+  accountId: string | null
   transferAccountId: string | null
 }): Transaction {
   return {
@@ -170,7 +171,7 @@ describe('month totals and transfer balances', () => {
         fc.array(
           fc.record({
             amountYen: amountArb,
-            source: fc.constantFrom(0, 1, 2),
+            source: fc.constantFrom(0, 1, 2, -1),
             dest: fc.constantFrom(0, 1, 2, -1),
             deleted: fc.boolean(),
             sourceDeleted: fc.boolean(),
@@ -183,8 +184,10 @@ describe('month totals and transfer balances', () => {
           const ids = ['a', 'b', 'c']
           const accounts = ids.map((id, index) => account(id, openings[index] ?? 0, false))
           const transactions = rows.map((row, index) => {
-            const source = ids[row.source] ?? 'a'
-            const dest = row.dest < 0 ? null : (ids[row.dest] ?? null)
+            let source = row.source < 0 ? null : (ids[row.source] ?? 'a')
+            let dest = row.dest < 0 ? null : (ids[row.dest] ?? null)
+            if (source && dest === source) dest = null
+            if (!source && !dest) source = 'a'
             return transaction({
               id: `p${index}`,
               date: '2026-04-04',
@@ -193,7 +196,7 @@ describe('month totals and transfer balances', () => {
               deleted: row.deleted,
               categoryId: null,
               accountId: source,
-              transferAccountId: dest === source ? null : dest,
+              transferAccountId: dest,
             })
           })
           if (rows.some((row) => row.sourceDeleted)) {
@@ -209,7 +212,7 @@ describe('month totals and transfer balances', () => {
           for (const item of transactions) {
             if (item.deletedAt !== null || item.type !== 'transfer') continue
             const amount = BigInt(item.amountYen)
-            if (live.has(item.accountId)) expected -= amount
+            if (item.accountId && live.has(item.accountId)) expected -= amount
             if (
               item.transferAccountId &&
               live.has(item.transferAccountId) &&
@@ -239,7 +242,8 @@ describe('month totals and transfer balances', () => {
           const paired = transactions.every(
             (item) =>
               item.deletedAt !== null ||
-              (item.transferAccountId !== null &&
+              (item.accountId !== null &&
+                item.transferAccountId !== null &&
                 item.transferAccountId !== item.accountId &&
                 live.has(item.accountId) &&
                 live.has(item.transferAccountId)),

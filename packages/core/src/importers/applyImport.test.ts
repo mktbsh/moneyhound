@@ -170,7 +170,7 @@ describe('applyImport', () => {
     )
     const bank = first.ledger.accounts.find((account) => account.name === '銀行口座')
     const cash = first.ledger.accounts.find((account) => account.name === '現金')
-    expect(inflow?.accountId).toBe(bank?.id)
+    expect(inflow?.accountId).toBeNull()
     expect(inflow?.transferAccountId).toBe(bank?.id)
     expect(outflow?.accountId).toBe(cash?.id)
     expect(outflow?.transferAccountId).toBeNull()

@@ -33,16 +33,16 @@ Bun workspaces:
 - `packages/core` is pure. Model, schema, aggregation, transfers, category rules, the Money Forward CSV parser, `applyImport`, and the sync merge live here. No DOM and no React. Tests sit next to the code and run with `bun test`.
 - `packages/ui` is shared React components. It receives a ledger and callbacks. It does not talk to IndexedDB or Google.
 - `apps/web` is the Vite PWA: routing, IndexedDB (`moneyhound` / object store `kv`), and the Drive client. Hash routes: `#/`, `#/transactions`, `#/categories`, `#/settings`.
-- Playwright lives in `e2e/` and must not need Google. The Drive file is still schema version 1 `ledger.json`.
+- Playwright lives in `e2e/` and must not need Google. The Drive file is schema version 2 `ledger.json`.
 
-## Data model (schemaVersion 1)
+## Data model (schemaVersion 2)
 
 `Ledger` holds `accounts`, `categories`, `transactions`, `importSources`, `categoryRules`, `budgets`, and `assetSnapshots`.
 
 Every record has `id`, `createdAt`, `updatedAt`, `revision`, and `deletedAt`. Deletes are tombstones so another device can learn about them. Do not drop rows to mean "deleted".
 
 - Amounts are positive integers. `type` is `income`, `expense`, or `transfer`.
-- A transfer is one record: `accountId` is the source, `transferAccountId` is the destination. Monthly income, expense, and balance ignore transfers. `projectAccountBalances` moves the amount from one account to the other. Money Forward's CSV has no destination column. `applyImport` pairs two `振替=1` rows with the same absolute amount, the same date, opposite signs, and different `保有金融機関` into one transfer (the negative row is the source). A single negative row whose description is exactly another account's name uses that account. Any other lone outflow stays one-sided (`transferAccountId` null, shown as 振替先未設定). A lone positive row, money arriving with no source row, stores `transferAccountId` equal to `accountId` so `projectAccountBalances` credits 保有金融機関, and the list shows 振替元未設定. Both stay out of income and expense.
+- A transfer is one record. `accountId` is the source and `transferAccountId` is the destination. Either side may be null, and both null is invalid. Income and expense always set `accountId` and leave `transferAccountId` null. Monthly income, expense, and balance ignore transfers. `projectAccountBalances` debits a set source and credits a set destination. Money Forward's CSV has no destination column. `applyImport` pairs two `振替=1` rows with the same absolute amount, the same date, opposite signs, and different `保有金融機関` into one transfer (the negative row is the source). A single negative row whose description is exactly another account's name uses that account. Any other lone outflow keeps `transferAccountId` null and is shown as 振替先未設定. A lone positive row keeps `accountId` null and `transferAccountId` set to 保有金融機関, so the balance is credited, and the list shows 振替元未設定. Both stay out of income and expense.
 - Categories have `kind` (`income` or `expense`) and optional `parentId` (Money Forward 中項目).
 - Accounts have `kind` (`cash`, `bank`, `card`, `emoney`, `securities`, `other`), optional `sourceId`, optional `externalAccountId`, and `openingBalanceYen` for a later balance screen.
 - `budgets` and `assetSnapshots` are stored and synced now and unused by the UI. Phase 3 and phase 4 should fill them instead of replacing the ledger.
@@ -51,7 +51,7 @@ Every record has `id`, `createdAt`, `updatedAt`, `revision`, and `deletedAt`. De
 
 Seed categories and accounts use fixed ids and the timestamp `1970-01-01T00:00:00.000Z`, so two devices start from the same canonical records.
 
-Backup files are `{ app: "moneyhound", schemaVersion, exportedAt, ledger }`. The Drive file is the ledger object itself, not the backup wrapper. `assertLedger` rejects `schemaVersion` other than `1`. Adding a field requires a version bump and a migration in `assertLedger` / `loadStoredLedger`.
+Backup files are `{ app: "moneyhound", schemaVersion, exportedAt, ledger }`. The Drive file is the ledger object itself, not the backup wrapper. `assertLedger` rejects `schemaVersion` other than `2`. Version 1 was never shipped, so there is no migration from it. Adding a field requires a version bump and a migration in `assertLedger` / `loadStoredLedger`.
 
 ## Sync
 

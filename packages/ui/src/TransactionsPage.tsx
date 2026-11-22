@@ -139,11 +139,14 @@ export function TransactionsPage({
 }
 
 function accountPhrase(transaction: Transaction, accounts: Map<string, string>): string {
-  const name = accounts.get(transaction.accountId) ?? '口座'
-  if (transaction.type !== 'transfer') return name
-  if (transaction.transferAccountId === transaction.accountId) return `振替元未設定 → ${name}`
-  if (!transaction.transferAccountId) return `${name} · 振替先未設定`
-  return `${name} → ${accounts.get(transaction.transferAccountId) ?? '口座'}`
+  const source = transaction.accountId
+    ? (accounts.get(transaction.accountId) ?? '口座')
+    : '振替元未設定'
+  if (transaction.type !== 'transfer') return source
+  const destination = transaction.transferAccountId
+    ? (accounts.get(transaction.transferAccountId) ?? '口座')
+    : '振替先未設定'
+  return `${source} → ${destination}`
 }
 
 function labelOf(type: TransactionType): string {
@@ -174,15 +177,11 @@ function TransactionDialog({
   const [date, setDate] = useState(existing?.date ?? defaultDateForMonth(yearMonth))
   const [amount, setAmount] = useState(existing ? String(existing.amountYen) : '')
   const [categoryId, setCategoryId] = useState(existing?.categoryId ?? '')
-  const unknownSource =
-    existing?.type === 'transfer' && existing.transferAccountId === existing.accountId
   const [accountId, setAccountId] = useState(
-    unknownSource ? '' : (existing?.accountId ?? activeAccounts(ledger)[0]?.id ?? ''),
+    existing ? (existing.accountId ?? '') : (activeAccounts(ledger)[0]?.id ?? ''),
   )
   const [transferAccountId, setTransferAccountId] = useState(
-    unknownSource
-      ? existing.accountId
-      : (existing?.transferAccountId ?? activeAccounts(ledger)[1]?.id ?? ''),
+    existing ? (existing.transferAccountId ?? '') : (activeAccounts(ledger)[1]?.id ?? ''),
   )
   const [description, setDescription] = useState(existing?.description ?? '')
   const [memo, setMemo] = useState(existing?.memo ?? '')
@@ -194,9 +193,10 @@ function TransactionDialog({
     ? categoryId
     : (categories[0]?.id ?? '')
   const transferChoices = accounts.filter((account) => account.id !== accountId)
-  const chosenTransfer = transferChoices.some((account) => account.id === transferAccountId)
-    ? transferAccountId
-    : (transferChoices[0]?.id ?? '')
+  const chosenTransfer =
+    transferAccountId === '' || transferChoices.some((account) => account.id === transferAccountId)
+      ? transferAccountId
+      : (transferChoices[0]?.id ?? '')
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault()
@@ -205,8 +205,12 @@ function TransactionDialog({
       setError('金額は1円以上の整数で入力してください。')
       return
     }
-    if (type === 'transfer' && !accountId) {
-      setError('出どころを選んでください。')
+    if (type !== 'transfer' && !accountId) {
+      setError('口座を選んでください。')
+      return
+    }
+    if (type === 'transfer' && !accountId && !chosenTransfer) {
+      setError('振替元か振替先を選んでください。')
       return
     }
     const input: TransactionInput = {
@@ -214,7 +218,7 @@ function TransactionDialog({
       amountYen: parsed,
       type,
       categoryId: type === 'transfer' ? null : chosenCategory || null,
-      accountId,
+      accountId: accountId || null,
       transferAccountId: type === 'transfer' ? chosenTransfer || null : null,
       description,
       memo,
@@ -299,7 +303,7 @@ function TransactionDialog({
               value={accountId}
               onChange={(event) => setAccountId(event.target.value)}
             >
-              {accountId === '' ? <option value="">振替元未設定</option> : null}
+              {type === 'transfer' ? <option value="">振替元未設定</option> : null}
               {accounts.map((account) => (
                 <option key={account.id} value={account.id}>
                   {account.name}
@@ -315,6 +319,7 @@ function TransactionDialog({
                 value={chosenTransfer}
                 onChange={(event) => setTransferAccountId(event.target.value)}
               >
+                <option value="">振替先未設定</option>
                 {transferChoices.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
