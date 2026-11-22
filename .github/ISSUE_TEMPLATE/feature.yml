@@ -1,0 +1,46 @@
+name: Feature
+description: Agent-ready change for moneyhound
+title: '[feature] '
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What the owner should be able to do when this is merged.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is in scope and what must not be changed. Stay on the current phase unless the issue says otherwise.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Observable outcomes. Mention Japanese UI copy and yen amounts when the change is visible.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Commands and flows that must pass. Default is `bun run check`, and `bun run test:e2e` when the UI or IndexedDB changes.
+      value: |
+        - [ ] `bun run check`
+        - [ ] `bun run test:e2e` (if UI or storage changed)
+        - [ ] `bun run build`
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Constraints
+      description: Data model, OAuth scope, and importer notes. Leave the defaults unless this issue changes them.
+      value: |
+        - Do not commit real financial data or secrets.
+        - Do not deploy.
+        - Do not widen the Google scope past `drive.file`.
+        - Do not add bank login, cookie capture, or passkey automation.
