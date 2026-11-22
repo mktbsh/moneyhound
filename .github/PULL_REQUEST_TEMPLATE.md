@@ -4,9 +4,9 @@
 
 ## Verification
 
-- [ ] `pnpm check`
-- [ ] `pnpm test:e2e` (UI or IndexedDB changes)
-- [ ] `pnpm build`
+- [ ] `bun run check`
+- [ ] `bun run test:e2e` (UI or IndexedDB changes)
+- [ ] `bun run build`
 
 ## Definition of done
 

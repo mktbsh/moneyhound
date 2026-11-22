@@ -14,22 +14,25 @@ moneyhound is a single-user household ledger. The owner decides merges. Cloud ag
 ## Commands
 
 ```bash
-pnpm install
-pnpm dev          # http://127.0.0.1:5173
-pnpm check        # typecheck, lint, format, unit tests
-pnpm test:e2e     # Playwright, local-only mode, desktop and mobile
-pnpm build        # typecheck and production build (dist/)
+bun install
+bun run dev       # http://127.0.0.1:5173
+bun run check     # bun fmt --check, oxlint, typecheck, bun test
+bun run test:e2e  # Playwright via bunx, local-only, desktop and mobile
+bun run build     # typecheck and production build (apps/web/dist)
 ```
 
-`pnpm check` does not run the browser tests. Run `pnpm test:e2e` before a PR that changes UI or storage.
+Package manager is Bun 1.4.5 (`packageManager` and CI). Format with `bun fmt`. Lint with oxlint: Bun 1.4.5 has `bun fmt` and does not ship `bun lint` (`bun --help` lists `fmt` only, and `bun lint` looks for a package script). Do not add ESLint or Prettier.
+
+`bun run check` does not run the browser tests. Run `bun run test:e2e` before a PR that changes UI or storage.
 
 ## Layout
 
-- `src/domain` is pure. Aggregation, merge, backup, rules, and importers have no DOM and no network. Put tests next to the code.
-- `src/storage` is IndexedDB (`moneyhound` / object store `kv`).
-- `src/sync` plans a merge, then talks to Drive. The planner and the exchange loop are tested with a fake drive.
-- `src/ui` is the Japanese interface. Hash routes: `#/`, `#/transactions`, `#/categories`, `#/settings`.
-- Playwright lives in `e2e/` and must not need Google.
+Bun workspaces:
+
+- `packages/core` is pure. Model, schema, aggregation, transfers, category rules, the Money Forward CSV parser, `applyImport`, and the sync merge live here. No DOM and no React. Tests sit next to the code and run with `bun test`.
+- `packages/ui` is shared React components. It receives a ledger and callbacks. It does not talk to IndexedDB or Google.
+- `apps/web` is the Vite PWA: routing, IndexedDB (`moneyhound` / object store `kv`), and the Drive client. Hash routes: `#/`, `#/transactions`, `#/categories`, `#/settings`.
+- Playwright lives in `e2e/` and must not need Google. The Drive file is still schema version 1 `ledger.json`.
 
 ## Data model (schemaVersion 1)
 
@@ -65,7 +68,7 @@ The Drive client creates a visible folder named `moneyhound` and `ledger.json` i
 
 ## Importers
 
-Parsers implement `ImporterAdapter` in `src/domain/importers`:
+Parsers implement `ImporterAdapter` in `packages/core/src/importers`:
 
 ```ts
 parse({ bytes, fileName }) => ImportParseResult
@@ -93,11 +96,11 @@ Institution-specific column maps (SMBC, WAON, and others) are not ported in this
 
 ## Verification before a PR
 
-- `pnpm check` passes.
-- `pnpm test:e2e` passes when UI, routing, or IndexedDB behavior changes.
-- `pnpm build` passes.
+- `bun run check` passes.
+- `bun run test:e2e` passes when UI, routing, or IndexedDB behavior changes.
+- `bun run build` passes.
 - New domain behavior has unit tests. Import changes need a fixture with fictional rows.
-- Do not weaken the OAuth scope test in `src/sync/exchange.test.ts`.
+- Do not weaken the OAuth scope test in `packages/core/src/sync/exchange.test.ts`.
 
 ## Definition of done
 

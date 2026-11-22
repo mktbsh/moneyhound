@@ -6,7 +6,7 @@ moneyhound is a private app. The notes below are for traceability.
 
 <https://github.com/ossannote2025/mf-csv-viewer>
 
-`src/domain/importers/encoding.ts` and the Money Forward 「収入・支出詳細」 column matching in `src/domain/importers/mfCsv.ts` are adapted from this project (header folding, amount punctuation, UTF-8 / UTF-16 / Shift_JIS detection, and the `計算対象` / `振替` / `ID` columns). The surrounding ledger model is original.
+`packages/core/src/importers/encoding.ts` and the Money Forward 「収入・支出詳細」 column matching in `packages/core/src/importers/mfCsv.ts` are adapted from this project (header folding, amount punctuation, UTF-8 / UTF-16 / Shift_JIS detection, and the `計算対象` / `振替` / `ID` columns). The surrounding ledger model is original.
 
 ```
 MIT License

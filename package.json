@@ -3,41 +3,24 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "packageManager": "pnpm@9.15.9",
-  "engines": {
-    "node": ">=22"
-  },
+  "packageManager": "bun@1.4.5",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "test": "vitest run",
-    "test:e2e": "playwright test",
-    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
-  },
-  "dependencies": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "dev": "bun run --filter @moneyhound/web dev",
+    "build": "bun run typecheck && bun run --filter @moneyhound/web build",
+    "typecheck": "tsc -p packages/core/tsconfig.json && tsc -p packages/ui/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p tsconfig.e2e.json",
+    "test": "bun test packages apps",
+    "test:e2e": "bunx playwright test",
+    "check": "bun fmt --check --no-script && oxlint . && bun run typecheck && bun test packages apps"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.56.1",
     "@types/node": "22",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
-    "@vitejs/plugin-react": "^5.1.0",
-    "eslint": "^9.39.1",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "prettier": "^3.6.2",
-    "typescript": "~5.9.3",
-    "typescript-eslint": "^8.46.2",
-    "vite": "^7.2.2",
-    "vite-plugin-pwa": "^1.1.0",
-    "vitest": "^4.0.8"
+    "bun-types": "^1.4.5",
+    "oxlint": "^1.94.0",
+    "typescript": "~5.9.3"
   }
 }

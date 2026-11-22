@@ -27,11 +27,11 @@ body:
     id: verification
     attributes:
       label: Verification
-      description: Commands and flows that must pass. Default is `pnpm check`, and `pnpm test:e2e` when the UI or IndexedDB changes.
+      description: Commands and flows that must pass. Default is `bun run check`, and `bun run test:e2e` when the UI or IndexedDB changes.
       value: |
-        - [ ] `pnpm check`
-        - [ ] `pnpm test:e2e` (if UI or storage changed)
-        - [ ] `pnpm build`
+        - [ ] `bun run check`
+        - [ ] `bun run test:e2e` (if UI or storage changed)
+        - [ ] `bun run build`
     validations:
       required: true
   - type: textarea

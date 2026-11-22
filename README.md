@@ -8,19 +8,19 @@ moneyhound は株式会社マネーフォワードとは関係がありません
 
 ## 開発
 
-Node.js 22 以上と pnpm 9 が必要です。
+Bun 1.4.5 が必要です。整形は `bun fmt`、静的チェックは oxlint です。この版の Bun には `bun fmt` はあり、組み込みの `bun lint` はありません。
 
 ```bash
-pnpm install
-pnpm dev
+bun install
+bun run dev
 ```
 
 `http://127.0.0.1:5173` を開きます。`VITE_GOOGLE_CLIENT_ID` が空ならローカルのみで動作し、データはブラウザの IndexedDB に保存されます。テストと日常の開発はこの状態で行います。
 
 ```bash
-pnpm check      # 型、lint、format、単体テスト
-pnpm test:e2e   # ローカルのみのブラウザテスト（PC とスマホ幅）
-pnpm build      # dist/ を出力
+bun run check      # bun fmt、oxlint、型、bun test
+bun run test:e2e   # Playwright（bunx）。PC とスマホ幅、ローカルのみ
+bun run build      # apps/web/dist を出力
 ```
 
 環境変数は `.env.example` を `.env.local` にコピーして書きます。`.env.local` はコミットしません。
@@ -55,8 +55,8 @@ pnpm build      # dist/ を出力
 ### Pages
 
 1. 新しい Pages プロジェクトをこの Git リポジトリに接続する。
-2. ビルドコマンド: `pnpm install --frozen-lockfile && pnpm build`
-3. 出力ディレクトリ: `dist`
+2. ビルドコマンド: `bun install --frozen-lockfile && bun run build`
+3. 出力ディレクトリ: `apps/web/dist`
 4. 環境変数 `VITE_GOOGLE_CLIENT_ID` を Production に設定する。未設定でもローカルのみとしてビルドできる。
 5. カスタムドメインまたは `*.pages.dev` のオリジンを、OAuth クライアントの承認済み JavaScript 生成元に追加する。
 
@@ -64,7 +64,7 @@ pnpm build      # dist/ を出力
 
 ### Workers 静的アセット
 
-`wrangler` は依存関係に入れていません。Workers の静的アセットとして `dist` を配信する場合も、API ルートは作らず、環境変数はビルド時に `VITE_GOOGLE_CLIENT_ID` を渡します。
+`wrangler` は依存関係に入れていません。Workers の静的アセットとして `apps/web/dist` を配信する場合も、API ルートは作らず、環境変数はビルド時に `VITE_GOOGLE_CLIENT_ID` を渡します。
 
 ## データの場所
 
