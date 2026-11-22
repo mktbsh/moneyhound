@@ -200,8 +200,11 @@ function findExisting(
 ): Transaction | undefined {
   return ledger.transactions.find((transaction) => {
     if (transaction.source.sourceId !== sourceId) return false
-    if (row.externalId && transaction.source.externalId === row.externalId) return true
-    return !row.externalId && transaction.source.contentHash === row.contentHash
+    if (row.externalId) return transaction.source.externalId === row.externalId
+    // A hash-only row must not adopt a row that has its own external id.
+    return (
+      transaction.source.externalId === null && transaction.source.contentHash === row.contentHash
+    )
   })
 }
 

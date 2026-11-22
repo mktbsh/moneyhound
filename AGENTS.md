@@ -19,6 +19,7 @@ bun run dev       # http://127.0.0.1:5173
 bun run check     # bun fmt --check, oxlint, typecheck, bun test
 bun run test:e2e  # Playwright via bunx, local-only, desktop and mobile
 bun run build     # typecheck and production build (apps/web/dist)
+bun run verify:formal  # core money property tests, then the Lean proofs
 ```
 
 Package manager is Bun 1.4.5 (`packageManager` and CI). Typecheck uses `typescript@7.0.2` (`tsc` launches the native Go compiler). Node is 26.13.1 (`.node-version` and `engines`); CI installs that Node for Playwright. Format with `bun fmt`. Lint with oxlint: Bun 1.4.5 has `bun fmt` and does not ship `bun lint` (`bun --help` lists `fmt` only, and `bun lint` looks for a package script). Do not add ESLint or Prettier.
@@ -99,6 +100,7 @@ Institution-specific column maps (SMBC, WAON, and others) are not ported in this
 - `bun run check` passes.
 - `bun run test:e2e` passes when UI, routing, or IndexedDB behavior changes.
 - `bun run build` passes.
+- `bun run verify:formal` passes when aggregation, `applyImport`, or the sync merge changes. The spec and the command live in `.cursor/skills/verify-core-invariants/SKILL.md`.
 - New domain behavior has unit tests. Import changes need a fixture with fictional rows.
 - Do not weaken the OAuth scope test in `packages/core/src/sync/exchange.test.ts`.
 

@@ -1,0 +1,6 @@
+name = "moneyhound"
+version = "0.1.0"
+defaultTargets = ["Moneyhound"]
+
+[[lean_lib]]
+name = "Moneyhound"

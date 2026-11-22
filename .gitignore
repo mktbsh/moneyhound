@@ -11,3 +11,4 @@ blob-report
 coverage
 *.log
 .DS_Store
+verification/lean/.lake
