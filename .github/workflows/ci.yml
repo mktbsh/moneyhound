@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,8 +66,9 @@ jobs:
 
       # elan lives in ~/.elan. Lake build output is verification/lean/.lake.
       # The key changes only when the toolchain, the Lake manifest, or the lakefile changes.
-      - name: Cache Lean toolchain and Lake build
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # This job only restores. save-lean-cache saves on push to main.
+      - name: Restore Lean toolchain and Lake build
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.elan
@@ -83,3 +84,47 @@ jobs:
           lint: 'false'
           use-mathlib-cache: 'false'
           use-github-cache: 'false'
+
+  # Permissions cannot depend on the event, so the actions: write token is a
+  # separate job that does not run on pull requests. It rebuilds only when main
+  # has no cache for this key, then saves the same paths formal restores.
+  save-lean-cache:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: formal
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore Lean toolchain and Lake build
+        id: lean-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.elan
+            verification/lean/.lake
+          key: lean-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('verification/lean/lean-toolchain', 'verification/lean/lake-manifest.json', 'verification/lean/lakefile.toml') }}
+          lookup-only: 'true'
+
+      - name: Build Lean cache
+        if: steps.lean-cache.outputs.cache-hit != 'true'
+        uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1.7.1
+        with:
+          lake-package-directory: verification/lean
+          build: 'true'
+          test: 'false'
+          lint: 'false'
+          use-mathlib-cache: 'false'
+          use-github-cache: 'false'
+
+      - name: Save Lean toolchain and Lake build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.lean-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.elan
+            verification/lean/.lake
+          key: ${{ steps.lean-cache.outputs.cache-primary-key }}
