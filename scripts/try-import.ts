@@ -1,7 +1,6 @@
 /**
  * Local-only check of the importers against the owner's own statement files.
  *
- *   .private/statements/mf/*.csv            Money Forward 「収入・支出詳細」
  *   .private/statements/<口座名>/*.csv       institution CSV for that account
  *   .private/statements/<口座名>@card/*.csv  same, forcing the account kind
  *
@@ -82,7 +81,7 @@ function describeParse(parsed: ImportParseResult) {
     `  収入 ${formatYen(sum('income'))}（${count('income')}件） · 支出 ${formatYen(sum('expense'))}（${count('expense')}件） · 振替 ${formatYen(sum('transfer'))}（${count('transfer')}件）`,
   )
   const excluded = rows.filter((row) => !row.include).length
-  if (excluded) console.log(`  計算対象外 ${excluded}件`)
+  if (excluded) console.log(`  対象外 ${excluded}件`)
   const hashOnly = rows.filter((row) => !row.externalId)
   const distinct = new Set(hashOnly.map((row) => row.contentHash)).size
   if (hashOnly.length > distinct) {
@@ -139,7 +138,7 @@ function importFile(
   const applied = applyImport(ledger, parsed, clock())
   const report = applied.report
   console.log(
-    `  取り込み: 追加 ${report.inserted} · 更新 ${report.updated} · 変更なし ${report.unchanged} · 取り消し ${report.excluded} · 計算対象外 ${report.skipped} · 振替の入金側 ${report.paired}`,
+    `  取り込み: 追加 ${report.inserted} · 更新 ${report.updated} · 変更なし ${report.unchanged} · 取り消し ${report.excluded} · 対象外 ${report.skipped}`,
   )
   const again = applyImport(applied.ledger, parsed, clock()).report
   const idempotent = again.inserted === 0 && again.updated === 0 && again.excluded === 0
@@ -151,36 +150,28 @@ function importFile(
 
 function main() {
   if (!existsSync(STATEMENTS)) {
-    mkdirSync(join(STATEMENTS, 'mf'), { recursive: true })
+    mkdirSync(STATEMENTS, { recursive: true })
     console.log(
       `${relative(process.cwd(), STATEMENTS)}/ を作りました。CSV を置いてもう一度実行してください。`,
     )
-    console.log('  mf/            マネーフォワードME の「収入・支出詳細」')
     console.log('  <口座名>/       その口座の公式 CSV（例: ミドリカード/、ミドリ銀行@bank/）')
     return
   }
   let ledger = seedLedger()
   const folders = readdirSync(STATEMENTS)
     .filter((name) => statSync(join(STATEMENTS, name)).isDirectory())
-    .sort((a, b) => (a === 'mf' ? -1 : b === 'mf' ? 1 : a.localeCompare(b, 'ja')))
+    .sort((a, b) => a.localeCompare(b, 'ja'))
   let files = 0
   for (const folder of folders) {
-    const dir = join(STATEMENTS, folder)
-    for (const file of csvFiles(dir)) {
+    const target = folderTarget(folder)
+    for (const file of csvFiles(join(STATEMENTS, folder))) {
       files += 1
-      if (folder === 'mf') {
-        ledger = importFile(ledger, file, 'mf-csv')
-      } else {
-        const target = folderTarget(folder)
-        ledger = ensureAccount(ledger, target.accountName, target.kind)
-        ledger = importFile(ledger, file, 'institution-csv', target)
-      }
+      ledger = ensureAccount(ledger, target.accountName, target.kind)
+      ledger = importFile(ledger, file, 'institution-csv', target)
     }
   }
   if (files === 0) {
-    console.log(
-      'CSV がありません。.private/statements/mf/ か .private/statements/<口座名>/ に置いてください。',
-    )
+    console.log('CSV がありません。.private/statements/<口座名>/ に置いてください。')
     return
   }
 

@@ -12,7 +12,6 @@ import {
   type Ledger,
   type Transaction,
 } from '../types'
-import { planTransferRows } from './pairTransfers'
 import { IMPORT_SOURCE_NAMES } from './registry'
 import type { ImportParseResult, NormalizedTransaction } from './types'
 
@@ -21,10 +20,8 @@ export interface ImportReport {
   updated: number
   unchanged: number
   excluded: number
-  /** 計算対象=0 rows that were never imported. */
+  /** Excluded rows (`include: false`) that were never imported. */
   skipped: number
-  /** The inflow side of a paired transfer. Booked on the outflow row instead. */
-  paired: number
 }
 
 const EMPTY_REPORT: ImportReport = {
@@ -33,7 +30,6 @@ const EMPTY_REPORT: ImportReport = {
   unchanged: 0,
   excluded: 0,
   skipped: 0,
-  paired: 0,
 }
 
 export function guessAccountKind(name: string): AccountKind {
@@ -150,7 +146,7 @@ function ensureSource(ledger: Ledger, parsed: ImportParseResult): Ledger {
     name: IMPORT_SOURCE_NAMES[parsed.adapterId] ?? parsed.adapterId,
     delivery: 'file',
     accountId: null,
-    institution: parsed.adapterId === 'mf-csv' ? 'マネーフォワードME' : null,
+    institution: null,
     createdAt: SEED_TIME,
     updatedAt: SEED_TIME,
     revision: 1,
@@ -161,16 +157,6 @@ function ensureSource(ledger: Ledger, parsed: ImportParseResult): Ledger {
 
 function kindOf(type: NormalizedTransaction['type']): CategoryKind {
   return type === 'income' ? 'income' : 'expense'
-}
-
-/** An outflow whose description is exactly another live account name. */
-function accountIdByName(ledger: Ledger, name: string, sourceAccountId: string): string | null {
-  const folded = fold(name)
-  if (!folded) return null
-  const account = ledger.accounts.find(
-    (item) => item.deletedAt === null && fold(item.name) === folded && item.id !== sourceAccountId,
-  )
-  return account?.id ?? null
 }
 
 function resolveCategory(
@@ -255,30 +241,7 @@ export function applyImport(
   let current = ensureSource(ledger, parsed)
   const sourceId = `src_${parsed.adapterId}`
   const report: ImportReport = { ...EMPTY_REPORT }
-  for (const planned of planTransferRows(dedupe(parsed.transactions))) {
-    const row = planned.row
-    if (planned.counterpart) {
-      const existing = findExisting(current, sourceId, row)
-      if (!existing || existing.deletedAt) {
-        report.paired += 1
-        continue
-      }
-      current = {
-        ...current,
-        transactions: current.transactions.map((transaction) =>
-          transaction.id === existing.id
-            ? {
-                ...transaction,
-                deletedAt: clock.now,
-                updatedAt: clock.now,
-                revision: transaction.revision + 1,
-              }
-            : transaction,
-        ),
-      }
-      report.excluded += 1
-      continue
-    }
+  for (const row of dedupe(parsed.transactions)) {
     const account = ensureAccount(current, row.accountName, sourceId, clock)
     current = account.ledger
     const category = resolveCategory(current, row, account.accountId, parsed.adapterId, clock)
@@ -311,21 +274,15 @@ export function applyImport(
     let accountId: string | null = account.accountId
     let transferAccountId: string | null = null
     if (row.type === 'transfer') {
-      if (planned.destinationAccountName) {
-        const destination = ensureAccount(current, planned.destinationAccountName, sourceId, clock)
-        current = destination.ledger
-        if (destination.accountId !== account.accountId) transferAccountId = destination.accountId
-      } else if (row.amountSign < 0) {
+      // An importer sees one account, so a transfer arrives one-sided.
+      // Keep a side the owner filled in by hand on a later re-import.
+      if (row.amountSign < 0) {
         transferAccountId =
           existing?.transferAccountId && existing.transferAccountId !== account.accountId
             ? existing.transferAccountId
-            : accountIdByName(current, row.description, account.accountId)
+            : null
       } else {
-        // Money arrived in 保有金融機関 and the source row is missing.
-        transferAccountId =
-          existing?.transferAccountId && existing.transferAccountId !== account.accountId
-            ? existing.transferAccountId
-            : account.accountId
+        transferAccountId = account.accountId
         accountId =
           existing?.accountId && existing.accountId !== account.accountId
             ? existing.accountId

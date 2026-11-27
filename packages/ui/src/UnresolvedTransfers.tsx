@@ -17,8 +17,8 @@ function clock() {
 }
 
 /**
- * Imported transfers that name only one side, across all months. Optional:
- * old Money Forward history often cannot be resolved, and leaving it one-sided
+ * Transfers that name only one side, across all months. Optional:
+ * old history often cannot be resolved, and leaving it one-sided
  * only affects account balances, never monthly income and expense. So this
  * lives in settings instead of nagging on the transactions screen.
  * Rows with the same description and the same known account are fixed together.

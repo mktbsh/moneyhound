@@ -5,21 +5,32 @@ export interface DecodeResult {
   encoding: DetectedEncoding
 }
 
+const BOMS: readonly {
+  bytes: readonly number[]
+  label: 'utf-8' | 'utf-16le' | 'utf-16be'
+  encoding: DetectedEncoding
+}[] = [
+  { bytes: [0xef, 0xbb, 0xbf], label: 'utf-8', encoding: 'utf-8-bom' },
+  { bytes: [0xff, 0xfe], label: 'utf-16le', encoding: 'utf-16' },
+  { bytes: [0xfe, 0xff], label: 'utf-16be', encoding: 'utf-16' },
+]
+
+function startsWith(input: Uint8Array, prefix: readonly number[]): boolean {
+  return prefix.every((byte, index) => input[index] === byte)
+}
+
 /**
  * Decode a statement file the owner selected.
- * Order follows common Japanese bank/MF exports: UTF-8 BOM, UTF-16 BOM, strict UTF-8, else Shift_JIS.
- * Adapted from ossannote2025/mf-csv-viewer (MIT). See THIRD_PARTY_NOTICES.md.
+ * A byte order mark wins. Without one, valid UTF-8 is UTF-8, and anything
+ * else is read as Shift_JIS, which most Japanese banks and card issuers still use.
  */
 export function decodeCsvBytes(input: Uint8Array): DecodeResult {
-  if (input.length >= 3 && input[0] === 0xef && input[1] === 0xbb && input[2] === 0xbf) {
-    return { text: new TextDecoder('utf-8').decode(input.subarray(3)), encoding: 'utf-8-bom' }
-  }
-  if (
-    input.length >= 2 &&
-    ((input[0] === 0xff && input[1] === 0xfe) || (input[0] === 0xfe && input[1] === 0xff))
-  ) {
-    const label = input[0] === 0xff ? 'utf-16le' : 'utf-16be'
-    return { text: new TextDecoder(label).decode(input.subarray(2)), encoding: 'utf-16' }
+  const bom = BOMS.find((candidate) => startsWith(input, candidate.bytes))
+  if (bom) {
+    return {
+      text: new TextDecoder(bom.label).decode(input.subarray(bom.bytes.length)),
+      encoding: bom.encoding,
+    }
   }
   try {
     return { text: new TextDecoder('utf-8', { fatal: true }).decode(input), encoding: 'utf-8' }
