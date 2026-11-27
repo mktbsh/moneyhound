@@ -39,7 +39,7 @@ export interface Account extends Entity {
 export interface Category extends Entity {
   name: string
   kind: CategoryKind
-  /** Subcategory parent. Money Forward 中項目 maps here later. */
+  /** Subcategory parent. A statement's middle category maps here. */
   parentId: string | null
   sortOrder: number
   archived: boolean
@@ -87,7 +87,7 @@ export interface Transaction extends Entity {
 }
 
 export interface ImportSource extends Entity {
-  /** Adapter id, for example `mf-csv`. */
+  /** Adapter id, for example `institution-csv`. */
   adapterId: string
   name: string
   delivery: ImportDelivery

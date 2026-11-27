@@ -40,7 +40,7 @@ const rowArb: fc.Arbitrary<NormalizedTransaction> = fc.record({
 
 function parsed(rows: NormalizedTransaction[], fileError?: string): ImportParseResult {
   return {
-    adapterId: 'mf-csv',
+    adapterId: 'institution-csv',
     fileName: 'fixture.csv',
     transactions: rows,
     errors: [],
@@ -74,7 +74,7 @@ function externalCounts(ledger: Ledger): Map<string, number> {
   const counts = new Map<string, number>()
   for (const transaction of ledger.transactions) {
     const externalId = transaction.source.externalId
-    if (transaction.source.sourceId !== 'src_mf-csv' || !externalId) continue
+    if (transaction.source.sourceId !== 'src_institution-csv' || !externalId) continue
     counts.set(externalId, (counts.get(externalId) ?? 0) + 1)
   }
   return counts
@@ -208,7 +208,6 @@ describe('applyImport match keys', () => {
           unchanged: 0,
           excluded: 0,
           skipped: 0,
-          paired: 0,
         })
       }),
       { numRuns: 20 },

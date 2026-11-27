@@ -33,7 +33,7 @@ Package manager is Bun 1.4.5 (`packageManager` and CI). Typecheck uses `typescri
 
 Bun workspaces:
 
-- `packages/core` is pure. Model, schema, aggregation, transfers, category rules, the Money Forward CSV parser, `applyImport`, and the sync merge live here. No DOM and no React. Tests sit next to the code and run with `bun test`.
+- `packages/core` is pure. Model, schema, aggregation, transfers, category rules, the institution CSV parser, `applyImport`, and the sync merge live here. No DOM and no React. Tests sit next to the code and run with `bun test`.
 - `packages/ui` is shared React components. It receives a ledger and callbacks. It does not talk to IndexedDB or Google.
 - `apps/web` is the Vite PWA: routing, IndexedDB (`moneyhound` / object store `kv`), and the Drive client. Hash routes: `#/`, `#/transactions`, `#/categories`, `#/settings`.
 - Playwright lives in `e2e/` and must not need Google. The Drive file is schema version 2 `ledger.json`.
@@ -45,8 +45,8 @@ Bun workspaces:
 Every record has `id`, `createdAt`, `updatedAt`, `revision`, and `deletedAt`. Deletes are tombstones so another device can learn about them. Do not drop rows to mean "deleted".
 
 - Amounts are positive integers. `type` is `income`, `expense`, or `transfer`.
-- A transfer is one record. `accountId` is the source and `transferAccountId` is the destination. Either side may be null, and both null is invalid. Income and expense always set `accountId` and leave `transferAccountId` null. Monthly income, expense, and balance ignore transfers. `projectAccountBalances` debits a set source and credits a set destination. Money Forward's CSV has no destination column. `applyImport` pairs two `振替=1` rows with the same absolute amount, the same date, opposite signs, and different `保有金融機関` into one transfer (the negative row is the source). A single negative row whose description is exactly another account's name uses that account. Any other lone outflow keeps `transferAccountId` null and is shown as 振替先未設定. A lone positive row keeps `accountId` null and `transferAccountId` set to 保有金融機関, so the balance is credited, and the list shows 振替元未設定. Both stay out of income and expense.
-- Categories have `kind` (`income` or `expense`) and optional `parentId` (Money Forward 中項目).
+- A transfer is one record. `accountId` is the source and `transferAccountId` is the destination. Either side may be null, and both null is invalid. Income and expense always set `accountId` and leave `transferAccountId` null. Monthly income, expense, and balance ignore transfers. `projectAccountBalances` debits a set source and credits a set destination. An importer sees one account, so an imported transfer is one-sided: an outflow sets `accountId` and leaves `transferAccountId` null (振替先未設定); an inflow leaves `accountId` null and sets `transferAccountId` (振替元未設定). Both stay out of income and expense. Rows from different statements are never matched against each other (no bank-to-card netting).
+- Categories have `kind` (`income` or `expense`) and optional `parentId` (a statement's middle category).
 - Accounts have `kind` (`cash`, `bank`, `card`, `emoney`, `securities`, `other`), optional `sourceId`, optional `externalAccountId`, and `openingBalanceYen` for a later balance screen.
 - `budgets` and `assetSnapshots` are stored and synced now and unused by the UI. Phase 3 and phase 4 should fill them instead of replacing the ledger.
 - `categoryOrigin` is `user`, `import`, or `rule`. Re-import must not replace a `user` category.
@@ -78,29 +78,26 @@ Parsers implement `ImporterAdapter` in `packages/core/src/importers`:
 parse({ bytes, fileName, accountName?, positiveAmountIs? }) => ImportParseResult
 ```
 
-`accountName` names the account for a statement that does not (an institution CSV is one account); Money Forward ignores it. `positiveAmountIs` says how a single signed amount column reads (`expense` for card statements). The settings screen passes the chosen account's name, and `expense` when that account's kind is `card`.
+`accountName` names the account for a statement that does not (an institution CSV is one account). `positiveAmountIs` says how a single signed amount column reads (`expense` for card statements). The settings screen passes the chosen account's name, and `expense` when that account's kind is `card`.
 
-`applyImport` turns normalized rows into ledger records. It creates missing accounts and categories, applies category rules when the file has no category, and matches existing rows by `(sourceId, externalId)` or, when there is no external id, `(sourceId, contentHash)`. The same file imported twice does not duplicate rows. `計算対象=0` soft-deletes a previously imported id. A row that disappears from a later file is not deleted. `ImportReport` counts `inserted`, `updated`, `unchanged`, `excluded` (tombstoned by `計算対象=0`), `skipped` (`計算対象=0` rows never imported), and `paired` (the inflow side of a paired transfer, booked on the outflow row).
+`applyImport` turns normalized rows into ledger records. It creates missing accounts and categories, applies category rules when the file has no category, and matches existing rows by `(sourceId, externalId)` or, when there is no external id, `(sourceId, contentHash)`. The same file imported twice does not duplicate rows. A row with `include: false` soft-deletes a previously imported id. A row that disappears from a later file is not deleted. `ImportReport` counts `inserted`, `updated`, `unchanged`, `excluded` (tombstoned by `include: false`), and `skipped` (`include: false` rows never imported).
 
 The settings screen 「明細の取り込み」 picks an adapter (and an account for `institution-csv`), parses the file in the browser, shows a dry-run `ImportReport`, parse errors, and how many one-sided transfers will remain, and commits only on 「取り込む」. The file never leaves the device.
 
-One-sided transfers (振替先未設定 / 振替元未設定) are listed across all months in an optional settings section 「振替の相手口座（任意）」. The owner chose continuity over exactness: old Money Forward history often cannot be resolved, and a one-sided transfer only shifts account balances, never monthly income, expense, or balance, so the app does not nag about them on the transactions screen. `groupUnresolvedTransfers` groups them by missing side, known account, and folded description (a monthly card repayment is one group), and `fillTransferSides` sets the missing side of a whole group. `setTransferAccounts` changes one row. Neither touches provenance, so re-import keeps the chosen account.
+One-sided transfers (振替先未設定 / 振替元未設定) are listed across all months in an optional settings section 「振替の相手口座（任意）」. The owner chose continuity over exactness: old history often cannot be resolved, and a one-sided transfer only shifts account balances, never monthly income, expense, or balance, so the app does not nag about them on the transactions screen. `groupUnresolvedTransfers` groups them by missing side, known account, and folded description (a monthly card repayment is one group), and `fillTransferSides` sets the missing side of a whole group. `setTransferAccounts` changes one row. Neither touches provenance, so re-import keeps the chosen account.
+
+Money Forward CSV is not imported, on purpose. Supporting its export format (transfers flagged 計算対象=0, 「なし」 accounts, two-row transfer pairing) made the core more complex than the history was worth. Do not add an MF adapter back. Data already imported from MF stays valid: it is ordinary schema 2 rows with source id `src_mf-csv`.
 
 Registered now:
 
 | id                  | status                                                                                                 |
 | ------------------- | ------------------------------------------------------------------------------------------------------ |
-| `mf-csv`            | Parser, `applyImport`, and the settings import screen.                                                 |
 | `institution-csv`   | Generic header-detected CSV for one bank, card, or e-money account. OFX is not read yet.               |
 | `browser-extension` | Planned. A Chrome extension reads a statement page the owner already opened and sends rows to the app. |
 
-Adapters must not collect passwords, cookies, or passkeys, and must not automate login. `pnsk-lab/mnie` was consulted for the provider boundary (adapter id, normalized account/transaction, stable external reference). None of its login, session, or passkey code is in this repo and it must not be added.
+Adapters must not collect passwords, cookies, or passkeys, and must not automate login.
 
-`mf-csv` reads Money Forward ME 「収入・支出詳細」. Columns, header folding, and the UTF-8 / UTF-16 / Shift_JIS decode order follow `ossannote2025/mf-csv-viewer` (MIT). See `THIRD_PARTY_NOTICES.md`. Positive amounts are income, negative amounts are expense, `振替=1` is a transfer, and the MF `ID` column is `externalId`. A real MF export marks every `振替=1` row `計算対象=0` (transfers are outside 収支), so the parser ignores `計算対象` on transfer rows and keeps them. `計算対象=0` still excludes income and expense rows. `保有金融機関` 「なし」 (a hand-entered MF row with no account) is booked on 現金 (`MF_NO_ACCOUNT_TARGET`). In a real export only a small share of transfer rows pair, even with a one-week window, so most MF transfers arrive one-sided (card repayments show only the bank side).
-
-Money Forward CSV export requires MF Premium. After the owner cancels Money Forward, new history has to come from each institution's own CSV/OFX (or the extension). Do not assume MF CSV will remain available. The MF parser stays so the owner can import history exported before cancellation.
-
-Category rules (`contains` or `regex` on the description, optional `sourceId` / `accountId`) run at import time when the source did not name a category. Lower `priority` wins. This is the replacement for Money Forward's exact-match learning. The settings screen can add a contains-rule. Regex is in the model and is applied by `categoryFromRules`; the screen does not edit regex yet.
+Category rules (`contains` or `regex` on the description, optional `sourceId` / `accountId`) run at import time when the source did not name a category. Lower `priority` wins. The settings screen can add a contains-rule. Regex is in the model and is applied by `categoryFromRules`; the screen does not edit regex yet.
 
 `institution-csv` finds the header row in the first 30 lines by known Japanese column names (`ALIASES` in `institutionCsv.ts`): a date column, and either 出金/入金 style columns or one amount column, plus optional description, balance, and memo columns. Dates accept `YYYY/M/D`, `YYYY.M.D`, `YYYY年M月D日`, `YYYYMMDD`, and Reiwa (`R8.4.2`, `令和8年4月2日`). Rows with no date (totals) or no amount (前月繰越) are skipped silently. There is no row id, so the content hash includes the running balance when the file has one. Every row is income or expense; a bank row that is really a move between the owner's own accounts (card payment, ATM) is counted as expense until the owner edits it. A new column name goes into `ALIASES` with a fictional fixture. An institution whose layout the aliases cannot read gets its own adapter, with synthetic fixtures, not real statements.
 

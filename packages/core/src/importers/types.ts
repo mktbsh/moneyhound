@@ -10,7 +10,7 @@ export interface NormalizedTransaction {
   amountYen: number
   /**
    * Sign of the source amount before it was made absolute.
-   * For a Money Forward transfer, -1 means money leaves `accountName`
+   * For a transfer, -1 means money leaves `accountName`
    * and 1 means money arrives there. Income is 1 and expense is -1.
    */
   amountSign: -1 | 1
@@ -25,7 +25,7 @@ export interface NormalizedTransaction {
   externalId: string | null
   /** Fingerprint of the normalized identity fields. Occurrence suffix is added for duplicates. */
   contentHash: string
-  /** False when the source marks the row as excluded (MF 計算対象=0). */
+  /** False when the source marks the row as excluded from totals. */
   include: boolean
 }
 
@@ -47,7 +47,7 @@ export interface ImportInput {
   fileName: string
   /**
    * Account the rows belong to, for statements that do not name one
-   * (an institution CSV is one account). Money Forward ignores it.
+   * (an institution CSV is one account).
    */
   accountName?: string
   /**

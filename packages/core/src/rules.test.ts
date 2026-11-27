@@ -39,17 +39,17 @@ describe('category rules', () => {
         accountId: 'acct_bank',
       }),
       rule({
-        id: 'mf-only',
+        id: 'source-only',
         pattern: '電車',
         categoryId: 'cat_transport',
         priority: 0,
-        sourceId: 'mf-csv',
+        sourceId: 'institution-csv',
       }),
     ]
     expect(
       categoryFromRules(rules, {
         description: 'スターバックス コーヒー',
-        sourceId: 'mf-csv',
+        sourceId: 'institution-csv',
         accountId: 'acct_card',
       }),
     ).toBe('cat_leisure')
@@ -60,7 +60,11 @@ describe('category rules', () => {
       categoryFromRules(rules, { description: '電車', sourceId: 'manual', accountId: 'acct_cash' }),
     ).toBeNull()
     expect(
-      categoryFromRules(rules, { description: '電車', sourceId: 'mf-csv', accountId: 'acct_cash' }),
+      categoryFromRules(rules, {
+        description: '電車',
+        sourceId: 'institution-csv',
+        accountId: 'acct_cash',
+      }),
     ).toBe('cat_transport')
   })
 
@@ -78,7 +82,7 @@ describe('category rules', () => {
     expect(
       categoryFromRules(rules, {
         description: 'JR東日本',
-        sourceId: 'mf-csv',
+        sourceId: 'institution-csv',
         accountId: 'acct_card',
       }),
     ).toBe('cat_transport')

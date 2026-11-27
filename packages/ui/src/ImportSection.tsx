@@ -48,8 +48,7 @@ function reportLine(report: ImportReport): string {
   const parts = [`追加 ${report.inserted}件`, `更新 ${report.updated}件`]
   if (report.unchanged) parts.push(`変更なし ${report.unchanged}件`)
   if (report.excluded) parts.push(`取り消し ${report.excluded}件`)
-  if (report.paired) parts.push(`振替の入金側 ${report.paired}件`)
-  if (report.skipped) parts.push(`計算対象外 ${report.skipped}件`)
+  if (report.skipped) parts.push(`対象外 ${report.skipped}件`)
   return parts.join(' · ')
 }
 
@@ -113,23 +112,25 @@ export function ImportSection({ ledger, onCommit }: { ledger: Ledger; onCommit: 
         を読み込んで明細に追加します。同じファイルを何度読み込んでも重複しません。手入力で選んだカテゴリは上書きしません。ファイルはこの端末の中だけで読みます。
       </p>
       <div className="import-form">
-        <label>
-          形式
-          <select
-            data-testid="import-adapter"
-            value={adapterId}
-            onChange={(event) => {
-              setAdapterId(event.target.value)
-              setMessage(null)
-            }}
-          >
-            {importers.map((importer) => (
-              <option key={importer.id} value={importer.id}>
-                {importer.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {importers.length > 1 ? (
+          <label>
+            形式
+            <select
+              data-testid="import-adapter"
+              value={adapterId}
+              onChange={(event) => {
+                setAdapterId(event.target.value)
+                setMessage(null)
+              }}
+            >
+              {importers.map((importer) => (
+                <option key={importer.id} value={importer.id}>
+                  {importer.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {needsAccount ? (
           <label>
             取り込み先の口座
