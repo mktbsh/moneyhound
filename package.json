@@ -13,8 +13,9 @@
   ],
   "scripts": {
     "dev": "bun run --filter @moneyhound/web dev",
-    "build": "bun run typecheck && bun run --filter @moneyhound/web build",
-    "typecheck": "tsc -p packages/core/tsconfig.json && tsc -p packages/ui/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p tsconfig.e2e.json",
+    "build": "bun run typecheck && bun run --filter @moneyhound/web build && bun run --filter @moneyhound/gas build",
+    "gas:push": "bun run build && bun run --filter @moneyhound/gas push",
+    "typecheck": "tsc -p packages/core/tsconfig.json && tsc -p packages/ui/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p apps/gas/tsconfig.json && tsc -p tsconfig.e2e.json",
     "test": "bun test packages apps",
     "test:e2e": "bunx playwright test",
     "check": "bun fmt --check --no-script && oxlint . && bun run typecheck && bun test packages apps",

@@ -1,0 +1,14 @@
+{
+  "name": "@moneyhound/gas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build.ts",
+    "push": "bunx @google/clasp@3.4.1 push",
+    "deploy": "bunx @google/clasp@3.4.1 deploy"
+  },
+  "dependencies": {
+    "@moneyhound/core": "workspace:*"
+  }
+}

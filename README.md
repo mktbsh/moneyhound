@@ -1,29 +1,27 @@
 # moneyhound
 
-個人用の家計簿です。マネーフォワードの代わりに、この端末と自分の Google ドライブだけで収支を残します。銀行への自動ログインやサーバーへの保存はありません。
+個人用の家計簿です。Google Apps Script の Web アプリとして動き、データは自分の Google ドライブの `マイドライブ/moneyhound/ledger.json` だけに保存します。銀行への自動ログインはありません。
 
-画面は日本語、金額は円です。スマホと PC のブラウザで使え、ホーム画面に追加できる PWA です。
+画面は日本語、金額は円です。スマホと PC のブラウザで、Google にログインして使います。オフラインでは使えません。
 
 moneyhound は株式会社マネーフォワードとは関係がありません。
 
 ## 開発
 
-Bun 1.4.5 と Node.js 26.13.1 が必要です。型検査は `typescript@7.0.2`（Go 製の `tsc`）です。整形は `bun fmt`、静的チェックは oxlint です。この版の Bun には `bun fmt` はあり、組み込みの `bun lint` はありません。
+Bun 1.4.5 と Node.js 26.13.1 が必要です。型検査は `typescript@7.0.2`（Go 製の `tsc`）です。整形は `bun fmt`、静的チェックは oxlint です。画面は Solid で、ビルドすると 1 枚の HTML になります。
 
 ```bash
 bun install
 bun run dev
 ```
 
-`http://127.0.0.1:5173` を開きます。`VITE_GOOGLE_CLIENT_ID` が空ならローカルのみで動作し、データはブラウザの IndexedDB に保存されます。テストと日常の開発はこの状態で行います。
+`http://127.0.0.1:5173` を開きます。手元では Google を使わず、データはブラウザの IndexedDB に保存されます。テストと日常の開発はこの状態で行います。
 
 ```bash
 bun run check      # bun fmt、oxlint、型、bun test
-bun run test:e2e   # Playwright（bunx）。PC とスマホ幅、ローカルのみ
-bun run build      # apps/web/dist を出力
+bun run test:e2e   # Playwright（bunx）。PC とスマホ幅、ローカル
+bun run build      # apps/web/dist/index.html と apps/gas/dist を出力
 ```
-
-環境変数は `.env.example` を `.env.local` にコピーして書きます。`.env.local` はコミットしません。
 
 ## できること（この段階）
 
@@ -34,44 +32,31 @@ bun run build      # apps/web/dist を出力
 - CSV の取り込み（設定 →「明細の取り込み」）。銀行・カード・電子マネーの公式 CSV を、口座を選んで取り込む。取り込む前に件数を確認でき、同じファイルを何度読んでも重複しない
 - 相手口座が未設定の振替を、設定画面でまとめて設定（任意。未設定でも収支の集計は変わらない）
 - JSON バックアップの書き出しと読み込み
-- クライアント ID があるとき、Google ドライブの `マイドライブ/moneyhound/ledger.json` と同期
+- 変更のたびにドライブへ保存。2 台で同時に保存しても、記録ごとに統合する
 
 マネーフォワードの CSV は取り込みません（形式が独特で、対応すると仕組みが複雑になるため）。明細は各金融機関の公式 CSV から取り込みます。OFX にはまだ対応していません。
 
-## Google の OAuth クライアント
+## Apps Script への配置（オーナーの作業）
 
-同期を使うときだけ作成します。
+このリポジトリからはデプロイしません。
 
-1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作る。
-2. OAuth 同意画面を **外部** ではなく、テスト用途なら **Testing** にする。テストユーザーに自分の Google アカウントだけを追加する。公開ステータスにはしない。
-3. 認証情報で **OAuth クライアント ID**、種類は **ウェブ アプリケーション**。
-4. 承認済みの JavaScript 生成元に、開発なら `http://127.0.0.1:5173`、公開するなら Cloudflare のオリジン（例: `https://moneyhound.example.pages.dev`）を追加する。リダイレクト URI は使いません（トークンフローです）。
-5. クライアント ID を `VITE_GOOGLE_CLIENT_ID` に入れる。
+1. [Apps Script](https://script.google.com/) で新しいプロジェクトを作り、プロジェクトの設定からスクリプト ID を控える。
+2. `bunx @google/clasp@3.4.1 login` で自分のアカウントにログインする。
+3. `apps/gas/.clasp.json.example` を `apps/gas/.clasp.json` にコピーし、`scriptId` を書く（このファイルはコミットしない）。
+4. `bun run gas:push` でビルドして送る。
+5. Apps Script のエディタで「デプロイ」→「新しいデプロイ」→ 種類「ウェブアプリ」。実行ユーザーは「自分」、アクセスできるユーザーは「自分のみ」（`appsscript.json` と同じ）。
+6. 初回はドライブの権限（`drive.file`。このスクリプトが作ったファイルだけ）を許可する。発行された URL をスマホと PC のブックマークに入れる。
 
-アプリが要求するスコープは `https://www.googleapis.com/auth/drive.file` だけです。このクライアントが作った `moneyhound` フォルダだけにアクセスします。ドライブ全体は読みません。
+更新するときは `bun run gas:push` のあと、同じデプロイを新しいバージョンで更新します。URL は変わりません。
 
-## Cloudflare への配置（手順のみ）
+### 手元のデータを移す
 
-このリポジトリからはデプロイしません。オーナーが Cloudflare で静的サイトとして公開します。Workers の API や D1 は使いません。
-
-### Pages
-
-1. 新しい Pages プロジェクトをこの Git リポジトリに接続する。
-2. ビルドコマンド: `bun install --frozen-lockfile && bun run build`
-3. 出力ディレクトリ: `apps/web/dist`
-4. 環境変数 `VITE_GOOGLE_CLIENT_ID` を Production に設定する。未設定でもローカルのみとしてビルドできる。
-5. カスタムドメインまたは `*.pages.dev` のオリジンを、OAuth クライアントの承認済み JavaScript 生成元に追加する。
-
-画面はハッシュルーティング（`#/transactions` など）なので、SPA 用のリダイレクト設定は不要です。
-
-### Workers 静的アセット
-
-`wrangler` は依存関係に入れていません。Workers の静的アセットとして `apps/web/dist` を配信する場合も、API ルートは作らず、環境変数はビルド時に `VITE_GOOGLE_CLIENT_ID` を渡します。
+手元（`127.0.0.1:5173`）で使っていたデータは、設定 → バックアップ で書き出し、Apps Script 版の 設定 → バックアップ で読み込みます。
 
 ## データの場所
 
-- ブラウザ: IndexedDB のデータベース `moneyhound`
-- ドライブ: `マイドライブ/moneyhound/ledger.json`
+- ドライブ: `マイドライブ/moneyhound/ledger.json`（正本）
+- 手元の開発: ブラウザの IndexedDB のデータベース `moneyhound`
 - バックアップ: 設定画面から書き出した JSON
 
-実在の明細やトークンを Git に入れないでください。
+実在の明細やトークン、`.clasp.json` を Git に入れないでください。

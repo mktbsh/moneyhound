@@ -6,10 +6,11 @@ moneyhound is a single-user household ledger. The owner decides merges. Cloud ag
 
 - One person. Japanese UI. Amounts are integer yen.
 - Manual entry and CSV import the owner starts. No bank login, no credential storage, no server-side scraping.
-- Static hosting only (Cloudflare Pages or Workers static assets). No application server, no D1, no Workers API.
-- System of record is a JSON ledger. A copy lives in IndexedDB. Optional sync uses the owner's Google Drive **My Drive** folder `moneyhound/`, scope `https://www.googleapis.com/auth/drive.file` only.
-- If `VITE_GOOGLE_CLIENT_ID` is empty the app must stay fully usable offline. Tests and local development run in that mode.
-- Never commit real statements, exports, tokens, or `.env` files. Never deploy. Never widen the OAuth scope.
+- Hosted as a Google Apps Script web app, run as the owner and open only to the owner (`executeAs: USER_DEPLOYING`, `access: MYSELF`). No other server, no Cloudflare, no OAuth client of our own.
+- System of record is one JSON ledger, `My Drive/moneyhound/ledger.json`. Apps Script scope is `https://www.googleapis.com/auth/drive.file` only (`apps/gas/appsscript.json`).
+- Online only. The page has no offline copy; every edit is saved to Drive. Local development and e2e run without Google and keep the ledger in IndexedDB.
+- The page is one self-contained HTML file (Solid, `vite-plugin-singlefile`). Keep it small: no image files; icons are inline SVG, and anything large comes from a CDN.
+- Never commit real statements, exports, tokens, `.clasp.json`, or `.env` files. Never push or deploy the Apps Script project. Never widen the scope.
 
 ## Commands
 
@@ -18,7 +19,8 @@ bun install
 bun run dev       # http://127.0.0.1:5173
 bun run check     # bun fmt --check, oxlint, typecheck, bun test
 bun run test:e2e  # Playwright via bunx, local-only, desktop and mobile
-bun run build     # typecheck and production build (apps/web/dist)
+bun run build     # typecheck, apps/web/dist/index.html, then apps/gas/dist (Code.js, appsscript.json, index.html)
+bun run gas:push  # owner only: build and clasp push apps/gas/dist (needs apps/gas/.clasp.json)
 bun run verify:formal  # core money property tests, then the Lean proofs
 bun run try:import     # owner only: run the importers on CSVs in .private/statements (gitignored)
 ```
@@ -33,10 +35,11 @@ Package manager is Bun 1.4.5 (`packageManager` and CI). Typecheck uses `typescri
 
 Bun workspaces:
 
-- `packages/core` is pure. Model, schema, aggregation, transfers, category rules, the institution CSV parser, `applyImport`, and the sync merge live here. No DOM and no React. Tests sit next to the code and run with `bun test`.
-- `packages/ui` is shared React components. It receives a ledger and callbacks. It does not talk to IndexedDB or Google.
-- `apps/web` is the Vite PWA: routing, IndexedDB (`moneyhound` / object store `kv`), and the Drive client. Hash routes: `#/`, `#/transactions`, `#/categories`, `#/settings`.
-- Playwright lives in `e2e/` and must not need Google. The Drive file is schema version 2 `ledger.json`.
+- `packages/core` is pure. Model, schema, aggregation, transfers, category rules, the institution CSV parser, `applyImport`, and the sync merge live here. No DOM and no UI framework. Tests sit next to the code and run with `bun test`.
+- `packages/ui` is Solid 2 components (`solid-js` and `@solidjs/web` 2.0, built by `@solidjs/vite-plugin` 3). It receives a ledger and callbacks. It does not talk to storage or Google. Read props as `props.x` inside JSX, memos, or handlers; never destructure props or read them once in a component body (Solid 2 reports `STRICT_READ_UNTRACKED`). Form state seeded from props uses `editable()` in `packages/ui/src/editable.ts`. Use `onInput` for text fields, lowercase HTML attribute names (`inputmode`), and string values for `aria-*`. Do not silence diagnostics with `untrack`. Check the browser console for `[CODE]` warnings after UI changes; the repair guide is `node_modules/solid-js/skills/reactivity-diagnostics/SKILL.md`.
+- `apps/web` is the Vite app built into one `index.html`: routing, the store, and `storage/backend.ts`. When the page runs inside Apps Script (`google.script.run` exists) it uses `driveBackend`; otherwise `localBackend` (IndexedDB `moneyhound` / object store `kv`). Hash routes: `#/`, `#/transactions`, `#/categories`, `#/settings`.
+- `apps/gas` is the Apps Script project: `src/Code.js` (`doGet`, `mhRead`, `mhWrite`), `appsscript.json`, and `build.ts`, which assembles `apps/gas/dist`. `src/fakeAppsScript.ts` runs `Code.js` in tests with in-memory Drive, properties, and lock services.
+- Playwright lives in `e2e/` and must not need Google. It runs the local backend.
 
 ## Data model (schemaVersion 2)
 
@@ -48,7 +51,7 @@ Every record has `id`, `createdAt`, `updatedAt`, `revision`, and `deletedAt`. De
 - A transfer is one record. `accountId` is the source and `transferAccountId` is the destination. Either side may be null, and both null is invalid. Income and expense always set `accountId` and leave `transferAccountId` null. Monthly income, expense, and balance ignore transfers. `projectAccountBalances` debits a set source and credits a set destination. An importer sees one account, so an imported transfer is one-sided: an outflow sets `accountId` and leaves `transferAccountId` null (振替先未設定); an inflow leaves `accountId` null and sets `transferAccountId` (振替元未設定). Both stay out of income and expense. Rows from different statements are never matched against each other (no bank-to-card netting).
 - Categories have `kind` (`income` or `expense`) and optional `parentId` (a statement's middle category).
 - Accounts have `kind` (`cash`, `bank`, `card`, `emoney`, `securities`, `other`), optional `sourceId`, optional `externalAccountId`, and `openingBalanceYen` for a later balance screen.
-- `budgets` and `assetSnapshots` are stored and synced now and unused by the UI. Phase 3 and phase 4 should fill them instead of replacing the ledger.
+- `budgets` and `assetSnapshots` are stored now and unused by the UI. Phase 3 and phase 4 should fill them instead of replacing the ledger.
 - `categoryOrigin` is `user`, `import`, or `rule`. Re-import must not replace a `user` category.
 - `Transaction.source` is `{ sourceId, externalId, contentHash, importedAt }`. Manual rows use source id `manual`. Imported rows use the import-source id `src_<adapterId>`.
 
@@ -56,19 +59,18 @@ Seed categories and accounts use fixed ids and the timestamp `1970-01-01T00:00:0
 
 Backup files are `{ app: "moneyhound", schemaVersion, exportedAt, ledger }`. The Drive file is the ledger object itself, not the backup wrapper. `assertLedger` rejects `schemaVersion` other than `2`. Version 1 was never shipped, so there is no migration from it. Adding a field requires a version bump and a migration in `assertLedger` / `loadStoredLedger`.
 
-## Sync
+## Saving to Drive
 
 Last-writer-wins is per record, not per file.
 
-1. Remember the ledger we last successfully synced (`SyncState.base`) and the Drive etag.
-2. Read the remote ledger. If it is not valid JSON of schema 2, stop and do not upload.
-3. Three-way merge base, local, and remote (`mergeLedgers`). A missing row is not a delete. Both sides changed the same id: higher `revision` wins, then later `updatedAt`, then a deterministic canonical JSON tie-break. The result lists those conflicts.
-4. Upload the merged ledger with `If-Match` on the etag we just read. On HTTP 412, re-read and merge again (up to three attempts).
-5. Save the merged ledger as both the local copy and the new base.
+1. `mhRead` returns the file body and a version counter (script property `ledgerVersion`) as its etag.
+2. Every edit sends the whole ledger to `mhWrite` with the version it was based on. Under a script lock, the server writes only when that version is current, then increments it. Otherwise it throws `precondition_failed`. It also refuses a body that is not a schema 2 ledger.
+3. On `precondition_failed`, the page runs `exchangeLedgers`: read the remote, three-way merge base, local, and remote (`mergeLedgers`), and write again (up to three attempts). A missing row is not a delete. Both sides changed the same id: higher `revision` wins, then later `updatedAt`, then a deterministic canonical JSON tie-break.
+4. The merged ledger becomes the screen's ledger and the new base. Edits are saved one at a time.
 
-Two devices that edit different records both keep their edits. Two devices that edit the same record keep the newer revision instead of one file replacing the other. Clocks can still tie; revision is the primary key because each edit increments it.
+Two devices that edit different records both keep their edits. Other devices' changes appear on reload or with 「最新を読み込む」 in settings.
 
-The Drive client creates a visible folder named `moneyhound` and `ledger.json` inside it, marked with `appProperties.app=moneyhound`. `drive.file` only sees files this OAuth client created. The app does not read the rest of the user's Drive.
+`Code.js` creates a visible folder `moneyhound` and `ledger.json` inside it, and remembers the file id in script properties. With `drive.file`, Apps Script only sees files this script created. A hand edit of the file in Drive does not bump the version.
 
 ## Importers
 
@@ -104,17 +106,17 @@ Category rules (`contains` or `regex` on the description, optional `sourceId` / 
 ## Verification before a PR
 
 - `bun run check` passes.
-- `bun run test:e2e` passes when UI, routing, or IndexedDB behavior changes.
+- `bun run test:e2e` passes when UI, routing, or storage behavior changes.
 - `bun run build` passes.
 - `bun run verify:formal` passes when aggregation, `applyImport`, or the sync merge changes. The spec and the command live in `.cursor/skills/verify-core-invariants/SKILL.md`.
 - New domain behavior has unit tests. Import changes need a fixture with fictional rows.
-- Do not weaken the OAuth scope test in `packages/core/src/sync/exchange.test.ts`.
+- Do not weaken the scope tests in `packages/core/src/sync/exchange.test.ts` and `apps/gas/src/Code.test.ts`.
 
 ## Definition of done
 
 - The change matches the issue's acceptance criteria and stays inside that scope.
 - Schema changes are versioned and covered by backup/merge tests.
-- Local-only mode still works with an empty client id.
+- Local mode (no Apps Script) still works, so e2e needs no Google.
 - No secrets, no real financial data, no deploy, no scope wider than `drive.file`.
 - `AGENTS.md` is updated when commands, the data model, or the importer contract change.
 
@@ -124,4 +126,4 @@ Agents must not change GitHub settings or branch protection. The owner should:
 
 - Require the `verify` workflow on `main`.
 - Create labels `ready-for-agent`, `spec`, and `blocked` for issue triage.
-- Create the Google OAuth client and the Cloudflare project (see `README.md`) when they want sync and hosting.
+- Create the Apps Script project, bind it with `apps/gas/.clasp.json`, and push and deploy it (see `README.md`).

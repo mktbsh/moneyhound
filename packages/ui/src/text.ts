@@ -16,17 +16,20 @@ const LEDGER_MESSAGES: Record<string, string> = {
   not_found: '対象が見つかりませんでした。',
   invalid_ledger: 'データ形式が正しくありません。',
   remote_unreadable: 'ドライブ上の台帳を読み取れなかったため、上書きしませんでした。',
-  google_not_configured: 'Google クライアント ID が未設定です。',
-  gis_load_failed: 'Google のログイン画面を読み込めませんでした。',
-  google_auth_cancelled: 'Google ログインをキャンセルしました。',
-  google_auth_failed: 'Google ログインに失敗しました。',
-  google_scope_rejected: '許可された権限が drive.file ではありません。',
+  remote_missing: 'ドライブ上の台帳が見つかりませんでした。',
+}
+
+/** Wall clock and random ids for one edit. */
+export function clock() {
+  return { now: new Date().toISOString(), id: () => crypto.randomUUID() }
 }
 
 export function messageOf(error: unknown): string {
   if (error instanceof LedgerError) return LEDGER_MESSAGES[error.code] ?? '保存できませんでした。'
   if (error instanceof Error) {
-    if (error.message.startsWith('drive_')) return 'Google ドライブとの通信に失敗しました。'
+    if (error.message.startsWith('drive_') || error.message.startsWith('gas_')) {
+      return 'Google ドライブとの通信に失敗しました。'
+    }
     return LEDGER_MESSAGES[error.message] ?? '処理に失敗しました。'
   }
   return '処理に失敗しました。'

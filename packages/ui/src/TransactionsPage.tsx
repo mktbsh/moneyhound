@@ -1,42 +1,44 @@
-import { useState, type FormEvent } from 'react'
-import { defaultDateForMonth, formatIsoDate, yearMonthOf } from '@moneyhound/core'
+import { createMemo, createSignal, For, Show } from 'solid-js'
 import {
   activeAccounts,
   activeCategories,
   addTransaction,
+  defaultDateForMonth,
   deleteTransaction,
+  formatIsoDate,
+  formatYen,
+  parseYen,
   updateTransaction,
   visibleTransactions,
+  yearMonthOf,
+  type Ledger,
+  type Transaction,
   type TransactionInput,
+  type TransactionType,
 } from '@moneyhound/core'
-import { formatYen, parseYen } from '@moneyhound/core'
-import type { Ledger, Transaction, TransactionType } from '@moneyhound/core'
-import { messageOf } from './text'
+import { editable } from './editable'
+import { clock, messageOf } from './text'
 
-function clock() {
-  return { now: new Date().toISOString(), id: () => crypto.randomUUID() }
-}
+type Commit = (ledger: Ledger) => Promise<void>
 
-export function TransactionsPage({
-  ledger,
-  yearMonth,
-  onCommit,
-}: {
-  ledger: Ledger
-  yearMonth: string
-  onCommit: (ledger: Ledger) => Promise<void>
-}) {
-  const [dialog, setDialog] = useState<Transaction | 'new' | null>(null)
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
-  const items = visibleTransactions(ledger).filter(
-    (transaction) => yearMonthOf(transaction.date) === yearMonth,
+export function TransactionsPage(props: { ledger: Ledger; yearMonth: string; onCommit: Commit }) {
+  const [dialog, setDialog] = createSignal<Transaction | 'new' | null>(null)
+  const [pendingDelete, setPendingDelete] = createSignal<string | null>(null)
+  const items = createMemo(() =>
+    visibleTransactions(props.ledger).filter(
+      (transaction) => yearMonthOf(transaction.date) === props.yearMonth,
+    ),
   )
-  const names = new Map(ledger.categories.map((category) => [category.id, category.name]))
-  const accounts = new Map(ledger.accounts.map((account) => [account.id, account.name]))
+  const names = createMemo(
+    () => new Map(props.ledger.categories.map((category) => [category.id, category.name])),
+  )
+  const accounts = createMemo(
+    () => new Map(props.ledger.accounts.map((account) => [account.id, account.name])),
+  )
 
   async function remove(id: string) {
     try {
-      await onCommit(deleteTransaction(ledger, id, clock()))
+      await props.onCommit(deleteTransaction(props.ledger, id, clock()))
       setPendingDelete(null)
     } catch (error) {
       window.alert(messageOf(error))
@@ -45,95 +47,98 @@ export function TransactionsPage({
 
   return (
     <>
-      <div className="toolbar">
-        <p className="note">この月の明細です。</p>
+      <div class="toolbar">
+        <p class="note">この月の明細です。</p>
         <button
           type="button"
-          className="primary"
+          class="primary"
           data-testid="add-transaction"
           onClick={() => setDialog('new')}
         >
           明細を追加
         </button>
       </div>
-      {items.length === 0 ? (
-        <p className="empty" data-testid="empty-transactions">
-          この月の明細はまだありません。
-        </p>
-      ) : (
-        <ul className="list" data-testid="transaction-list">
-          {items.map((transaction) => (
-            <li key={transaction.id} className="tx">
-              <div>
-                <p>
-                  <span className="tag">{labelOf(transaction.type)}</span>
-                  {transaction.description || transaction.memo || '（内容なし）'}
-                </p>
-                <p className="muted">
-                  {formatIsoDate(transaction.date)} ·{' '}
-                  {names.get(transaction.categoryId ?? '') ??
-                    (transaction.type === 'transfer' ? '振替' : '未分類')}{' '}
-                  · {accountPhrase(transaction, accounts)}
-                  {transaction.memo && transaction.description ? ` · ${transaction.memo}` : ''}
-                </p>
-              </div>
-              <div>
-                <p className={`amount ${transaction.type}`}>{signed(transaction)}</p>
-                <div className="row-actions">
-                  {pendingDelete === transaction.id ? (
-                    <>
+      <Show
+        when={items().length > 0}
+        fallback={
+          <p class="empty" data-testid="empty-transactions">
+            この月の明細はまだありません。
+          </p>
+        }
+      >
+        <ul class="list" data-testid="transaction-list">
+          <For each={items()}>
+            {(transaction) => (
+              <li class="tx">
+                <div>
+                  <p>
+                    <span class="tag">{labelOf(transaction.type)}</span>
+                    {transaction.description || transaction.memo || '（内容なし）'}
+                  </p>
+                  <p class="muted">
+                    {formatIsoDate(transaction.date)} ·{' '}
+                    {names().get(transaction.categoryId ?? '') ??
+                      (transaction.type === 'transfer' ? '振替' : '未分類')}{' '}
+                    · {accountPhrase(transaction, accounts())}
+                    {transaction.memo && transaction.description ? ` · ${transaction.memo}` : ''}
+                  </p>
+                </div>
+                <div>
+                  <p class={`amount ${transaction.type}`}>{signed(transaction)}</p>
+                  <div class="row-actions">
+                    <Show
+                      when={pendingDelete() === transaction.id}
+                      fallback={
+                        <>
+                          <button
+                            type="button"
+                            class="ghost"
+                            data-testid="edit-transaction"
+                            onClick={() => setDialog(transaction)}
+                          >
+                            編集
+                          </button>
+                          <button
+                            type="button"
+                            class="ghost"
+                            data-testid="delete-transaction"
+                            onClick={() => setPendingDelete(transaction.id)}
+                          >
+                            削除
+                          </button>
+                        </>
+                      }
+                    >
                       <button
                         type="button"
-                        className="danger"
+                        class="danger"
                         data-testid="confirm-delete"
                         onClick={() => void remove(transaction.id)}
                       >
                         削除する
                       </button>
-                      <button
-                        type="button"
-                        className="ghost"
-                        onClick={() => setPendingDelete(null)}
-                      >
+                      <button type="button" class="ghost" onClick={() => setPendingDelete(null)}>
                         やめる
                       </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="ghost"
-                        data-testid="edit-transaction"
-                        onClick={() => setDialog(transaction)}
-                      >
-                        編集
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost"
-                        data-testid="delete-transaction"
-                        onClick={() => setPendingDelete(transaction.id)}
-                      >
-                        削除
-                      </button>
-                    </>
-                  )}
+                    </Show>
+                  </div>
                 </div>
-              </div>
-            </li>
-          ))}
+              </li>
+            )}
+          </For>
         </ul>
-      )}
-      {dialog ? (
-        <TransactionDialog
-          key={dialog === 'new' ? 'new' : dialog.id}
-          ledger={ledger}
-          yearMonth={yearMonth}
-          existing={dialog === 'new' ? null : dialog}
-          onCommit={onCommit}
-          onClose={() => setDialog(null)}
-        />
-      ) : null}
+      </Show>
+      <Show when={dialog()} keyed>
+        {(open) => (
+          <TransactionDialog
+            ledger={props.ledger}
+            yearMonth={props.yearMonth}
+            existing={open === 'new' ? null : open}
+            onCommit={props.onCommit}
+            onClose={() => setDialog(null)}
+          />
+        )}
+      </Show>
     </>
   )
 }
@@ -160,113 +165,123 @@ function signed(transaction: Transaction): string {
   return formatYen(transaction.amountYen)
 }
 
-function TransactionDialog({
-  ledger,
-  yearMonth,
-  existing,
-  onCommit,
-  onClose,
-}: {
+function TransactionDialog(props: {
   ledger: Ledger
   yearMonth: string
-  onCommit: (ledger: Ledger) => Promise<void>
   existing: Transaction | null
+  onCommit: Commit
   onClose: () => void
 }) {
-  const [type, setType] = useState<TransactionType>(existing?.type ?? 'expense')
-  const [date, setDate] = useState(existing?.date ?? defaultDateForMonth(yearMonth))
-  const [amount, setAmount] = useState(existing ? String(existing.amountYen) : '')
-  const [categoryId, setCategoryId] = useState(existing?.categoryId ?? '')
-  const [accountId, setAccountId] = useState(
-    existing ? (existing.accountId ?? '') : (activeAccounts(ledger)[0]?.id ?? ''),
+  // Each field starts from the row being edited (or sensible defaults) and keeps what the user types.
+  const [type, setType] = editable<TransactionType>(() => props.existing?.type ?? 'expense')
+  const [date, setDate] = editable(
+    () => props.existing?.date ?? defaultDateForMonth(props.yearMonth),
   )
-  const [transferAccountId, setTransferAccountId] = useState(
-    existing ? (existing.transferAccountId ?? '') : (activeAccounts(ledger)[1]?.id ?? ''),
+  const [amount, setAmount] = editable(() =>
+    props.existing ? String(props.existing.amountYen) : '',
   )
-  const [description, setDescription] = useState(existing?.description ?? '')
-  const [memo, setMemo] = useState(existing?.memo ?? '')
-  const [error, setError] = useState<string | null>(null)
+  const [categoryId, setCategoryId] = editable(() => props.existing?.categoryId ?? '')
+  const [accountId, setAccountId] = editable(() =>
+    props.existing ? (props.existing.accountId ?? '') : (activeAccounts(props.ledger)[0]?.id ?? ''),
+  )
+  const [transferAccountId, setTransferAccountId] = editable(() =>
+    props.existing
+      ? (props.existing.transferAccountId ?? '')
+      : (activeAccounts(props.ledger)[1]?.id ?? ''),
+  )
+  const [description, setDescription] = editable(() => props.existing?.description ?? '')
+  const [memo, setMemo] = editable(() => props.existing?.memo ?? '')
+  const [error, setError] = createSignal<string | null>(null)
 
-  const categories = activeCategories(ledger, type === 'income' ? 'income' : 'expense')
-  const accounts = activeAccounts(ledger)
-  const chosenCategory = categories.some((category) => category.id === categoryId)
-    ? categoryId
-    : (categories[0]?.id ?? '')
-  const transferChoices = accounts.filter((account) => account.id !== accountId)
-  const chosenTransfer =
-    transferAccountId === '' || transferChoices.some((account) => account.id === transferAccountId)
-      ? transferAccountId
-      : (transferChoices[0]?.id ?? '')
+  const categories = createMemo(() =>
+    activeCategories(props.ledger, type() === 'income' ? 'income' : 'expense'),
+  )
+  const accounts = createMemo(() => activeAccounts(props.ledger))
+  const chosenCategory = () =>
+    categories().some((category) => category.id === categoryId())
+      ? categoryId()
+      : (categories()[0]?.id ?? '')
+  const transferChoices = createMemo(() =>
+    accounts().filter((account) => account.id !== accountId()),
+  )
+  const chosenTransfer = () =>
+    transferAccountId() === '' ||
+    transferChoices().some((account) => account.id === transferAccountId())
+      ? transferAccountId()
+      : (transferChoices()[0]?.id ?? '')
 
-  async function onSubmit(event: FormEvent) {
+  async function onSubmit(event: SubmitEvent) {
     event.preventDefault()
-    const parsed = parseYen(amount)
+    const parsed = parseYen(amount())
     if (parsed === null || parsed <= 0) {
       setError('金額は1円以上の整数で入力してください。')
       return
     }
-    if (type !== 'transfer' && !accountId) {
+    if (type() !== 'transfer' && !accountId()) {
       setError('口座を選んでください。')
       return
     }
-    if (type === 'transfer' && !accountId && !chosenTransfer) {
+    if (type() === 'transfer' && !accountId() && !chosenTransfer()) {
       setError('振替元か振替先を選んでください。')
       return
     }
     const input: TransactionInput = {
-      date,
+      date: date(),
       amountYen: parsed,
-      type,
-      categoryId: type === 'transfer' ? null : chosenCategory || null,
-      accountId: accountId || null,
-      transferAccountId: type === 'transfer' ? chosenTransfer || null : null,
-      description,
-      memo,
+      type: type(),
+      categoryId: type() === 'transfer' ? null : chosenCategory() || null,
+      accountId: accountId() || null,
+      transferAccountId: type() === 'transfer' ? chosenTransfer() || null : null,
+      description: description(),
+      memo: memo(),
     }
     try {
+      const existing = props.existing
       const next = existing
-        ? updateTransaction(ledger, existing.id, input, clock())
-        : addTransaction(ledger, input, clock())
-      await onCommit(next)
-      onClose()
+        ? updateTransaction(props.ledger, existing.id, input, clock())
+        : addTransaction(props.ledger, input, clock())
+      await props.onCommit(next)
+      props.onClose()
     } catch (caught) {
       setError(messageOf(caught))
     }
   }
 
   return (
-    <div className="backdrop" onMouseDown={onClose}>
+    <div class="backdrop" onMouseDown={() => props.onClose()}>
       <form
-        className="sheet"
+        class="sheet"
         role="dialog"
         aria-modal="true"
         aria-labelledby="tx-title"
         onMouseDown={(event) => event.stopPropagation()}
         onSubmit={(event) => void onSubmit(event)}
       >
-        <h3 id="tx-title">{existing ? '明細を編集' : '明細を追加'}</h3>
-        <div className="fields">
-          <div className="choices">
-            {(['expense', 'income', 'transfer'] as const).map((value) => (
-              <label key={value} className="choice">
-                <input
-                  type="radio"
-                  name="type"
-                  value={value}
-                  checked={type === value}
-                  onChange={() => setType(value)}
-                />
-                {labelOf(value)}
-              </label>
-            ))}
+        <h3 id="tx-title">{props.existing ? '明細を編集' : '明細を追加'}</h3>
+        <div class="fields">
+          <div class="choices">
+            <For each={['expense', 'income', 'transfer'] as const}>
+              {(value) => (
+                <label class="choice">
+                  <input
+                    type="radio"
+                    name="type"
+                    value={value}
+                    checked={type() === value}
+                    onChange={() => setType(value)}
+                  />
+                  {labelOf(value)}
+                </label>
+              )}
+            </For>
           </div>
           <label>
             日付
             <input
               data-testid="date"
               type="date"
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
+              value={date()}
+              onInput={(event) => setDate(event.currentTarget.value)}
               required
             />
           </label>
@@ -274,87 +289,83 @@ function TransactionDialog({
             金額（円）
             <input
               data-testid="amount"
-              inputMode="numeric"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              inputmode="numeric"
+              value={amount()}
+              onInput={(event) => setAmount(event.currentTarget.value)}
               required
             />
           </label>
-          {type !== 'transfer' ? (
+          <Show when={type() !== 'transfer'}>
             <label>
               カテゴリ
               <select
                 data-testid="category"
-                value={chosenCategory}
-                onChange={(event) => setCategoryId(event.target.value)}
+                value={chosenCategory()}
+                onChange={(event) => setCategoryId(event.currentTarget.value)}
               >
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
+                <For each={categories()}>
+                  {(category) => <option value={category.id}>{category.name}</option>}
+                </For>
               </select>
             </label>
-          ) : null}
+          </Show>
           <label>
-            {type === 'transfer' ? '出どころ' : '口座'}
+            {type() === 'transfer' ? '出どころ' : '口座'}
             <select
               data-testid="account"
-              value={accountId}
-              onChange={(event) => setAccountId(event.target.value)}
+              value={accountId()}
+              onChange={(event) => setAccountId(event.currentTarget.value)}
             >
-              {type === 'transfer' ? <option value="">振替元未設定</option> : null}
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
+              <Show when={type() === 'transfer'}>
+                <option value="">振替元未設定</option>
+              </Show>
+              <For each={accounts()}>
+                {(account) => <option value={account.id}>{account.name}</option>}
+              </For>
             </select>
           </label>
-          {type === 'transfer' ? (
+          <Show when={type() === 'transfer'}>
             <label>
               振替先
               <select
                 data-testid="transfer-account"
-                value={chosenTransfer}
-                onChange={(event) => setTransferAccountId(event.target.value)}
+                value={chosenTransfer()}
+                onChange={(event) => setTransferAccountId(event.currentTarget.value)}
               >
                 <option value="">振替先未設定</option>
-                {transferChoices.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
+                <For each={transferChoices()}>
+                  {(account) => <option value={account.id}>{account.name}</option>}
+                </For>
               </select>
             </label>
-          ) : null}
+          </Show>
           <label>
             内容
             <input
               data-testid="description"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              value={description()}
+              onInput={(event) => setDescription(event.currentTarget.value)}
             />
           </label>
           <label>
             メモ
             <input
               data-testid="memo"
-              value={memo}
-              onChange={(event) => setMemo(event.target.value)}
+              value={memo()}
+              onInput={(event) => setMemo(event.currentTarget.value)}
             />
           </label>
         </div>
-        {error ? (
-          <p className="alert" role="alert">
-            {error}
+        <Show when={error()}>
+          <p class="alert" role="alert">
+            {error()}
           </p>
-        ) : null}
-        <div className="sheet-actions">
-          <button type="button" className="ghost" onClick={onClose}>
+        </Show>
+        <div class="sheet-actions">
+          <button type="button" class="ghost" onClick={() => props.onClose()}>
             キャンセル
           </button>
-          <button type="submit" className="primary" data-testid="save-transaction">
+          <button type="submit" class="primary" data-testid="save-transaction">
             保存
           </button>
         </div>

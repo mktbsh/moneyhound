@@ -3,6 +3,7 @@
  *
  *   .private/statements/<口座名>/*.csv       institution CSV for that account
  *   .private/statements/<口座名>@card/*.csv  same, forcing the account kind
+ *   .private/statements/mf/, _<name>/        skipped (old Money Forward exports, archives)
  *
  *   bun run try:import                 summary only (no row contents)
  *   bun run try:import --rows 5        also print the first 5 parsed rows per file
@@ -50,6 +51,11 @@ function csvFiles(dir: string): string[] {
     .filter((name) => /\.csv$/i.test(name) && statSync(join(dir, name)).isFile())
     .sort()
     .map((name) => join(dir, name))
+}
+
+/** Money Forward exports are not importable. A leading _ marks an archive. */
+function isSkipped(folder: string): boolean {
+  return folder === 'mf' || folder.startsWith('_')
 }
 
 function folderTarget(folder: string): { accountName: string; kind: AccountKind } {
@@ -158,9 +164,12 @@ function main() {
     return
   }
   let ledger = seedLedger()
-  const folders = readdirSync(STATEMENTS)
+  const all = readdirSync(STATEMENTS)
     .filter((name) => statSync(join(STATEMENTS, name)).isDirectory())
     .sort((a, b) => a.localeCompare(b, 'ja'))
+  const skipped = all.filter(isSkipped)
+  const folders = all.filter((name) => !isSkipped(name))
+  if (skipped.length) console.log(`読まないフォルダ: ${skipped.join('、')}`)
   let files = 0
   for (const folder of folders) {
     const target = folderTarget(folder)

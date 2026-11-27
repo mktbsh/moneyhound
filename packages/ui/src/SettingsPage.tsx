@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { createSignal, For, Show } from 'solid-js'
 import {
   activeAccounts,
   activeCategories,
@@ -12,51 +12,40 @@ import {
   type AccountKind,
   type Ledger,
 } from '@moneyhound/core'
+import { editable } from './editable'
 import { ImportSection } from './ImportSection'
-import { ACCOUNT_KIND_LABEL, messageOf } from './text'
+import { ACCOUNT_KIND_LABEL, clock, messageOf } from './text'
 import { UnresolvedTransfers } from './UnresolvedTransfers'
 
 type Commit = (ledger: Ledger) => Promise<void>
 
-function clock() {
-  return { now: new Date().toISOString(), id: () => crypto.randomUUID() }
-}
-
-export function SettingsPage({
-  ledger,
-  syncNote,
-  driveConfigured,
-  onCommit,
-  onSync,
-}: {
+export function SettingsPage(props: {
   ledger: Ledger
-  syncNote: string | null
-  driveConfigured: boolean
+  storage: 'drive' | 'local'
   onCommit: Commit
-  onSync: () => Promise<string>
+  onReload: () => Promise<string>
 }) {
   return (
     <>
-      <AccountSection ledger={ledger} onCommit={onCommit} />
-      <RuleSection ledger={ledger} onCommit={onCommit} />
-      <ImportSection ledger={ledger} onCommit={onCommit} />
-      <UnresolvedTransfers ledger={ledger} onCommit={onCommit} />
-      <BackupSection ledger={ledger} onCommit={onCommit} />
-      <DriveSection syncNote={syncNote} driveConfigured={driveConfigured} onSync={onSync} />
+      <AccountSection ledger={props.ledger} onCommit={props.onCommit} />
+      <RuleSection ledger={props.ledger} onCommit={props.onCommit} />
+      <ImportSection ledger={props.ledger} onCommit={props.onCommit} />
+      <UnresolvedTransfers ledger={props.ledger} onCommit={props.onCommit} />
+      <BackupSection ledger={props.ledger} onCommit={props.onCommit} />
+      <StorageSection storage={props.storage} onReload={props.onReload} />
     </>
   )
 }
 
-function AccountSection({ ledger, onCommit }: { ledger: Ledger; onCommit: Commit }) {
-  const [name, setName] = useState('')
-  const [kind, setKind] = useState<AccountKind>('bank')
-  const [error, setError] = useState<string | null>(null)
-  const accounts = activeAccounts(ledger)
+function AccountSection(props: { ledger: Ledger; onCommit: Commit }) {
+  const [name, setName] = createSignal('')
+  const [kind, setKind] = createSignal<AccountKind>('bank')
+  const [error, setError] = createSignal<string | null>(null)
 
-  async function onSubmit(event: FormEvent) {
+  async function onSubmit(event: SubmitEvent) {
     event.preventDefault()
     try {
-      await onCommit(addAccount(ledger, { name, kind }, clock()))
+      await props.onCommit(addAccount(props.ledger, { name: name(), kind: kind() }, clock()))
       setName('')
       setError(null)
     } catch (caught) {
@@ -65,72 +54,78 @@ function AccountSection({ ledger, onCommit }: { ledger: Ledger; onCommit: Commit
   }
 
   return (
-    <section className="settings-block">
+    <section class="settings-block">
       <h2>口座</h2>
-      <form className="inline-form" onSubmit={(event) => void onSubmit(event)}>
+      <form class="inline-form" onSubmit={(event) => void onSubmit(event)}>
         <input
           data-testid="account-name"
           aria-label="口座名"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
+          value={name()}
+          onInput={(event) => setName(event.currentTarget.value)}
           placeholder="口座名"
         />
         <select
           data-testid="account-kind"
           aria-label="口座の種類"
-          value={kind}
-          onChange={(event) => setKind(event.target.value as AccountKind)}
+          value={kind()}
+          onChange={(event) => setKind(event.currentTarget.value as AccountKind)}
         >
-          {Object.entries(ACCOUNT_KIND_LABEL).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
+          <For each={Object.entries(ACCOUNT_KIND_LABEL)}>
+            {([value, label]) => <option value={value}>{label}</option>}
+          </For>
         </select>
-        <button type="submit" className="primary">
+        <button type="submit" class="primary">
           追加
         </button>
       </form>
-      {error ? <p className="alert">{error}</p> : null}
-      <ul className="list" data-testid="account-list">
-        {accounts.map((account) => (
-          <li key={account.id} className="plain">
-            <p>
-              <span className="tag">{ACCOUNT_KIND_LABEL[account.kind]}</span>
-              {account.name}
-            </p>
-            <button
-              type="button"
-              className="ghost"
-              aria-label={`${account.name}を削除`}
-              onClick={() =>
-                void onCommit(removeAccount(ledger, account.id, clock())).catch((caught) =>
-                  setError(messageOf(caught)),
-                )
-              }
-            >
-              削除
-            </button>
-          </li>
-        ))}
+      <Show when={error()}>
+        <p class="alert">{error()}</p>
+      </Show>
+      <ul class="list" data-testid="account-list">
+        <For each={activeAccounts(props.ledger)}>
+          {(account) => (
+            <li class="plain">
+              <p>
+                <span class="tag">{ACCOUNT_KIND_LABEL[account.kind]}</span>
+                {account.name}
+              </p>
+              <button
+                type="button"
+                class="ghost"
+                aria-label={`${account.name}を削除`}
+                onClick={() =>
+                  void props
+                    .onCommit(removeAccount(props.ledger, account.id, clock()))
+                    .catch((caught) => setError(messageOf(caught)))
+                }
+              >
+                削除
+              </button>
+            </li>
+          )}
+        </For>
       </ul>
     </section>
   )
 }
 
-function RuleSection({ ledger, onCommit }: { ledger: Ledger; onCommit: Commit }) {
-  const [pattern, setPattern] = useState('')
-  const [categoryId, setCategoryId] = useState(activeCategories(ledger)[0]?.id ?? '')
-  const [error, setError] = useState<string | null>(null)
-  const categories = activeCategories(ledger)
-  const rules = ledger.categoryRules.filter((rule) => rule.deletedAt === null)
-  const names = new Map(categories.map((category) => [category.id, category.name]))
+function RuleSection(props: { ledger: Ledger; onCommit: Commit }) {
+  const [pattern, setPattern] = createSignal('')
+  const [categoryId, setCategoryId] = editable(() => activeCategories(props.ledger)[0]?.id ?? '')
+  const [error, setError] = createSignal<string | null>(null)
+  const categories = () => activeCategories(props.ledger)
+  const rules = () => props.ledger.categoryRules.filter((rule) => rule.deletedAt === null)
+  const names = () => new Map(categories().map((category) => [category.id, category.name]))
 
-  async function onSubmit(event: FormEvent) {
+  async function onSubmit(event: SubmitEvent) {
     event.preventDefault()
     try {
-      await onCommit(
-        addCategoryRule(ledger, { pattern, categoryId, operator: 'contains' }, clock()),
+      await props.onCommit(
+        addCategoryRule(
+          props.ledger,
+          { pattern: pattern(), categoryId: categoryId(), operator: 'contains' },
+          clock(),
+        ),
       )
       setPattern('')
       setError(null)
@@ -140,62 +135,66 @@ function RuleSection({ ledger, onCommit }: { ledger: Ledger; onCommit: Commit })
   }
 
   return (
-    <section className="settings-block">
+    <section class="settings-block">
       <h2>自動分類ルール</h2>
-      <p className="note">
+      <p class="note">
         取り込み時に、内容が条件を含む明細へカテゴリを付けます。先に登録したルールから順に見ます。手入力で選んだカテゴリは上書きしません。
       </p>
-      <form className="inline-form" onSubmit={(event) => void onSubmit(event)}>
+      <form class="inline-form" onSubmit={(event) => void onSubmit(event)}>
         <input
           data-testid="rule-pattern"
           aria-label="内容に含む文字"
-          value={pattern}
-          onChange={(event) => setPattern(event.target.value)}
+          value={pattern()}
+          onInput={(event) => setPattern(event.currentTarget.value)}
           placeholder="内容に含む文字"
         />
         <select
           data-testid="rule-category"
           aria-label="付けるカテゴリ"
-          value={categoryId}
-          onChange={(event) => setCategoryId(event.target.value)}
+          value={categoryId()}
+          onChange={(event) => setCategoryId(event.currentTarget.value)}
         >
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
+          <For each={categories()}>
+            {(category) => <option value={category.id}>{category.name}</option>}
+          </For>
         </select>
-        <button type="submit" className="primary">
+        <button type="submit" class="primary">
           ルールを追加
         </button>
       </form>
-      {error ? <p className="alert">{error}</p> : null}
-      <ul className="list">
-        {rules.map((rule) => (
-          <li key={rule.id} className="plain">
-            <p>
-              「{rule.pattern}」→ {names.get(rule.categoryId) ?? 'カテゴリ'}
-            </p>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => void onCommit(removeCategoryRule(ledger, rule.id, clock()))}
-            >
-              削除
-            </button>
-          </li>
-        ))}
+      <Show when={error()}>
+        <p class="alert">{error()}</p>
+      </Show>
+      <ul class="list">
+        <For each={rules()}>
+          {(rule) => (
+            <li class="plain">
+              <p>
+                「{rule.pattern}」→ {names().get(rule.categoryId) ?? 'カテゴリ'}
+              </p>
+              <button
+                type="button"
+                class="ghost"
+                onClick={() =>
+                  void props.onCommit(removeCategoryRule(props.ledger, rule.id, clock()))
+                }
+              >
+                削除
+              </button>
+            </li>
+          )}
+        </For>
       </ul>
     </section>
   )
 }
 
-function BackupSection({ ledger, onCommit }: { ledger: Ledger; onCommit: Commit }) {
-  const [pending, setPending] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
+function BackupSection(props: { ledger: Ledger; onCommit: Commit }) {
+  const [pending, setPending] = createSignal<string | null>(null)
+  const [message, setMessage] = createSignal<string | null>(null)
 
   function download() {
-    const text = exportBackup(ledger, new Date().toISOString())
+    const text = exportBackup(props.ledger, new Date().toISOString())
     const blob = new Blob([text], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -206,28 +205,26 @@ function BackupSection({ ledger, onCommit }: { ledger: Ledger; onCommit: Commit 
   }
 
   async function confirm() {
-    if (!pending) return
+    const text = pending()
+    if (!text) return
     try {
-      await onCommit(importBackup(pending))
+      await props.onCommit(importBackup(text))
       setPending(null)
-      setMessage('バックアップを読み込み、この端末のデータを置き換えました。')
+      setMessage('バックアップを読み込み、台帳を置き換えました。')
     } catch (caught) {
       setMessage(messageOf(caught))
     }
   }
 
   return (
-    <section className="settings-block">
+    <section class="settings-block">
       <h2>バックアップ</h2>
-      <p className="note">
-        JSON
-        で書き出します。読み込むとこの端末の台帳を置き換えます。ドライブと同期した記録は、次回の同期で記録ごとに統合されます。
-      </p>
-      <div className="row-actions">
-        <button type="button" className="primary" data-testid="export-json" onClick={download}>
+      <p class="note">JSON で書き出します。読み込むと台帳を置き換えます。</p>
+      <div class="row-actions">
+        <button type="button" class="primary" data-testid="export-json" onClick={download}>
           書き出す
         </button>
-        <label className="ghost">
+        <label class="ghost">
           ファイルを選ぶ
           <input
             data-testid="import-file"
@@ -235,82 +232,77 @@ function BackupSection({ ledger, onCommit }: { ledger: Ledger; onCommit: Commit 
             accept="application/json,.json"
             hidden
             onChange={(event) => {
-              const file = event.target.files?.[0]
+              const input = event.currentTarget
+              const file = input.files?.[0]
               if (!file) return
               void file.text().then((text) => {
                 setPending(text)
                 setMessage(null)
               })
-              event.target.value = ''
+              input.value = ''
             }}
           />
         </label>
-        {pending ? (
+        <Show when={pending()}>
           <button
             type="button"
-            className="danger"
+            class="danger"
             data-testid="confirm-import"
             onClick={() => void confirm()}
           >
             この内容で置き換える
           </button>
-        ) : null}
+        </Show>
       </div>
-      {message ? <p className="note">{message}</p> : null}
+      <Show when={message()}>
+        <p class="note">{message()}</p>
+      </Show>
     </section>
   )
 }
 
-function DriveSection({
-  syncNote,
-  driveConfigured,
-  onSync,
-}: {
-  syncNote: string | null
-  driveConfigured: boolean
-  onSync: () => Promise<string>
-}) {
-  const [busy, setBusy] = useState(false)
-  const [localNote, setLocalNote] = useState<string | null>(null)
-  const note = localNote ?? syncNote
+function StorageSection(props: { storage: 'drive' | 'local'; onReload: () => Promise<string> }) {
+  const [busy, setBusy] = createSignal(false)
+  const [note, setNote] = createSignal<string | null>(null)
 
-  async function sync() {
+  async function reload() {
     setBusy(true)
-    setLocalNote(null)
+    setNote(null)
     try {
-      setLocalNote(await onSync())
-    } catch (caught) {
-      setLocalNote(messageOf(caught))
+      setNote(await props.onReload())
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <section className="settings-block" data-testid="drive-panel">
-      <h2>Google ドライブ</h2>
-      {driveConfigured ? (
-        <>
-          <p className="note" data-testid="drive-status">
-            マイドライブの moneyhound フォルダにある ledger.json と同期します。権限は drive.file
-            だけです。
+    <section class="settings-block" data-testid="drive-panel">
+      <h2>保存先</h2>
+      <Show
+        when={props.storage === 'drive'}
+        fallback={
+          <p class="note" data-testid="drive-status">
+            ローカルのみ（開発用）。このブラウザの IndexedDB に保存しています。
           </p>
-          <button
-            type="button"
-            className="primary"
-            data-testid="sync-drive"
-            disabled={busy}
-            onClick={() => void sync()}
-          >
-            {busy ? '同期中…' : '同期する'}
-          </button>
-        </>
-      ) : (
-        <p className="note" data-testid="drive-status">
-          ローカルのみ（Google クライアント ID 未設定）。この端末の IndexedDB に保存しています。
+        }
+      >
+        <p class="note" data-testid="drive-status">
+          マイドライブの moneyhound フォルダにある ledger.json
+          に、変更のたびに保存しています。別の端末で変更した内容は、開き直すか下のボタンで読み込みます。
         </p>
-      )}
-      {note ? <p className="note">{note}</p> : null}
+        <button
+          type="button"
+          class="primary"
+          data-testid="reload-drive"
+          disabled={busy()}
+          onClick={() => void reload()}
+        >
+          {busy() ? '読み込み中…' : '最新を読み込む'}
+        </button>
+      </Show>
+      <Show when={note()}>
+        <p class="note">{note()}</p>
+      </Show>
     </section>
   )
 }

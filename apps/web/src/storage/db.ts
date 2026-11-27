@@ -4,24 +4,6 @@ const DB_NAME = 'moneyhound'
 const DB_VERSION = 1
 const STORE = 'kv'
 
-export interface SyncState {
-  base: Ledger | null
-  fileId: string | null
-  etag: string | null
-  lastSyncedAt: string | null
-  lastConflictCount: number
-}
-
-export function emptySyncState(): SyncState {
-  return {
-    base: null,
-    fileId: null,
-    etag: null,
-    lastSyncedAt: null,
-    lastConflictCount: 0,
-  }
-}
-
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
@@ -51,25 +33,17 @@ async function withStore<T>(
   }
 }
 
-export async function loadLedger(): Promise<Ledger> {
+/** Local development and e2e only. Production keeps the ledger in Drive via Apps Script. */
+export async function loadLocalLedger(): Promise<Ledger> {
   const stored = await withStore<unknown>('readonly', (store) => store.get('ledger'))
   if (stored === undefined) {
     const seeded = seedLedger()
-    await saveLedger(seeded)
+    await saveLocalLedger(seeded)
     return seeded
   }
   return loadStoredLedger(stored)
 }
 
-export async function saveLedger(ledger: Ledger): Promise<void> {
+export async function saveLocalLedger(ledger: Ledger): Promise<void> {
   await withStore('readwrite', (store) => store.put(ledger, 'ledger'))
-}
-
-export async function loadSyncState(): Promise<SyncState> {
-  const stored = await withStore<SyncState | undefined>('readonly', (store) => store.get('sync'))
-  return stored ?? emptySyncState()
-}
-
-export async function saveSyncState(state: SyncState): Promise<void> {
-  await withStore('readwrite', (store) => store.put(state, 'sync'))
 }

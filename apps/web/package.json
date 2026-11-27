@@ -11,14 +11,12 @@
   "dependencies": {
     "@moneyhound/core": "workspace:*",
     "@moneyhound/ui": "workspace:*",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "@solidjs/web": "2.0.4",
+    "solid-js": "2.0.4"
   },
   "devDependencies": {
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
-    "@vitejs/plugin-react": "^6.3.0",
+    "@solidjs/vite-plugin": "3.0.1",
     "vite": "^8.3.8",
-    "vite-plugin-pwa": "^2.0.0"
+    "vite-plugin-singlefile": "2.3.4"
   }
 }
