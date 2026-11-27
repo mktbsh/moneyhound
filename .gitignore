@@ -15,3 +15,7 @@ verification/lean/.lake
 
 # Owner statements and outputs for local checks. Never commit.
 .private
+
+# Apps Script build output and the owner's project binding.
+apps/gas/dist
+apps/gas/.clasp.json

@@ -1,28 +1,20 @@
-import { useState, type FormEvent } from 'react'
+import { createSignal, For, Show } from 'solid-js'
 import { activeCategories, addCategory, removeCategory } from '@moneyhound/core'
 import type { CategoryKind, Ledger } from '@moneyhound/core'
-import { messageOf } from './text'
+import { clock, messageOf } from './text'
 
-function clock() {
-  return { now: new Date().toISOString(), id: () => crypto.randomUUID() }
-}
-
-export function CategoriesPage({
-  ledger,
-  onCommit,
-}: {
+export function CategoriesPage(props: {
   ledger: Ledger
   onCommit: (ledger: Ledger) => Promise<void>
 }) {
-  const [name, setName] = useState('')
-  const [kind, setKind] = useState<CategoryKind>('expense')
-  const [error, setError] = useState<string | null>(null)
-  const categories = activeCategories(ledger)
+  const [name, setName] = createSignal('')
+  const [kind, setKind] = createSignal<CategoryKind>('expense')
+  const [error, setError] = createSignal<string | null>(null)
 
-  async function onSubmit(event: FormEvent) {
+  async function onSubmit(event: SubmitEvent) {
     event.preventDefault()
     try {
-      await onCommit(addCategory(ledger, { name, kind }, clock()))
+      await props.onCommit(addCategory(props.ledger, { name: name(), kind: kind() }, clock()))
       setName('')
       setError(null)
     } catch (caught) {
@@ -32,7 +24,7 @@ export function CategoriesPage({
 
   async function remove(id: string) {
     try {
-      await onCommit(removeCategory(ledger, id, clock()))
+      await props.onCommit(removeCategory(props.ledger, id, clock()))
     } catch (caught) {
       setError(messageOf(caught))
     }
@@ -40,49 +32,51 @@ export function CategoriesPage({
 
   return (
     <section>
-      <form className="inline-form" onSubmit={(event) => void onSubmit(event)}>
+      <form class="inline-form" onSubmit={(event) => void onSubmit(event)}>
         <input
           data-testid="category-name"
           aria-label="カテゴリ名"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
+          value={name()}
+          onInput={(event) => setName(event.currentTarget.value)}
           placeholder="カテゴリ名"
         />
         <select
           data-testid="category-kind"
           aria-label="区分"
-          value={kind}
-          onChange={(event) => setKind(event.target.value as CategoryKind)}
+          value={kind()}
+          onChange={(event) => setKind(event.currentTarget.value as CategoryKind)}
         >
           <option value="expense">支出</option>
           <option value="income">収入</option>
         </select>
-        <button type="submit" className="primary">
+        <button type="submit" class="primary">
           追加
         </button>
       </form>
-      {error ? (
-        <p className="alert" role="alert">
-          {error}
+      <Show when={error()}>
+        <p class="alert" role="alert">
+          {error()}
         </p>
-      ) : null}
-      <ul className="list" data-testid="category-list">
-        {categories.map((category) => (
-          <li key={category.id} className="plain">
-            <p>
-              <span className="tag">{category.kind === 'income' ? '収入' : '支出'}</span>
-              {category.name}
-            </p>
-            <button
-              type="button"
-              className="ghost"
-              aria-label={`${category.name}を削除`}
-              onClick={() => void remove(category.id)}
-            >
-              削除
-            </button>
-          </li>
-        ))}
+      </Show>
+      <ul class="list" data-testid="category-list">
+        <For each={activeCategories(props.ledger)}>
+          {(category) => (
+            <li class="plain">
+              <p>
+                <span class="tag">{category.kind === 'income' ? '収入' : '支出'}</span>
+                {category.name}
+              </p>
+              <button
+                type="button"
+                class="ghost"
+                aria-label={`${category.name}を削除`}
+                onClick={() => void remove(category.id)}
+              >
+                削除
+              </button>
+            </li>
+          )}
+        </For>
       </ul>
     </section>
   )

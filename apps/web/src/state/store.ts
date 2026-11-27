@@ -1,79 +1,74 @@
-import { useSyncExternalStore } from 'react'
+import { createSignal } from 'solid-js'
 import { currentYearMonth, type Ledger } from '@moneyhound/core'
-import { loadLedger, saveLedger } from '../storage/db'
+import { messageOf } from '@moneyhound/ui'
+import { detectBackend, type LedgerBackend } from '../storage/backend'
 
 export type RouteName = 'summary' | 'transactions' | 'categories' | 'settings'
 
-interface Snapshot {
-  ready: boolean
-  loadError: string | null
-  ledger: Ledger | null
-  yearMonth: string
-  syncNote: string | null
+let backend: LedgerBackend | null = null
+function current(): LedgerBackend {
+  backend ??= detectBackend()
+  return backend
 }
 
-let snapshot: Snapshot = {
-  ready: false,
-  loadError: null,
-  ledger: null,
-  yearMonth: currentYearMonth(),
-  syncNote: null,
+const [ledger, setLedger] = createSignal<Ledger | null>(null)
+const [ready, setReady] = createSignal(false)
+const [loadError, setLoadError] = createSignal<string | null>(null)
+const [yearMonth, setYearMonth] = createSignal(currentYearMonth())
+const [storageNote, setStorageNote] = createSignal<string | null>(null)
+const [saving, setSaving] = createSignal(false)
+
+export { ledger, ready, loadError, yearMonth, setYearMonth, storageNote, saving }
+
+export function storageKind(): LedgerBackend['kind'] {
+  return current().kind
 }
 
-const listeners = new Set<() => void>()
 let starting: Promise<void> | null = null
-
-function emit() {
-  listeners.forEach((listener) => listener())
-}
-
-function update(patch: Partial<Snapshot>) {
-  snapshot = { ...snapshot, ...patch }
-  emit()
-}
-
-export function getSnapshot(): Snapshot {
-  return snapshot
-}
-
-export function subscribe(listener: () => void): () => void {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
 
 export function initLedger(): Promise<void> {
   if (!starting) {
-    starting = loadLedger()
-      .then((ledger) => {
-        update({ ledger, ready: true, loadError: null })
+    starting = current()
+      .load()
+      .then((loaded) => {
+        setLedger(loaded)
+        setLoadError(null)
       })
-      .catch(() => {
-        update({ ready: true, loadError: '保存データを読み込めませんでした。' })
+      .catch((error: unknown) => {
+        setLoadError(`保存データを読み込めませんでした。${messageOf(error)}`)
       })
+      .finally(() => setReady(true))
   }
   return starting
 }
 
-export async function commitLedger(ledger: Ledger): Promise<void> {
-  await saveLedger(ledger)
-  update({ ledger })
+/** Saves are serialized so two quick edits cannot race each other's version. */
+let queue: Promise<unknown> = Promise.resolve()
+
+export function commitLedger(next: Ledger): Promise<void> {
+  const run = queue.then(async () => {
+    setSaving(true)
+    try {
+      const result = await current().save(next)
+      setLedger(result.ledger)
+      setStorageNote(
+        result.conflicts
+          ? `別の端末で同時に変更された ${result.conflicts} 件は、新しい方を採用しました。`
+          : null,
+      )
+    } finally {
+      setSaving(false)
+    }
+  })
+  queue = run.catch(() => undefined)
+  return run
 }
 
+/** Re-read the stored ledger, for changes made on another device. */
 export async function reloadLedger(): Promise<void> {
-  const ledger = await loadLedger()
-  update({ ledger })
-}
-
-export function setYearMonth(yearMonth: string) {
-  update({ yearMonth })
-}
-
-export function setSyncNote(syncNote: string | null) {
-  update({ syncNote })
-}
-
-export function useSnapshot(): Snapshot {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const loaded = await current().load()
+  setLedger(loaded)
+  setStorageNote(null)
 }
 
 export function routeFromHash(hash: string): RouteName {
