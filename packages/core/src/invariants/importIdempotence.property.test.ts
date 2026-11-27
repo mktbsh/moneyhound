@@ -208,6 +208,7 @@ describe('applyImport match keys', () => {
           unchanged: 0,
           excluded: 0,
           skipped: 0,
+          paired: 0,
         })
       }),
       { numRuns: 20 },

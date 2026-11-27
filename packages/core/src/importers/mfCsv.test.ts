@@ -44,6 +44,29 @@ describe('Money Forward CSV', () => {
     expect(parsed.transactions.find((row) => row.externalId === 'mf-skip')?.include).toBe(false)
   })
 
+  it('books MF rows with no account (なし) on 現金', () => {
+    const csv = `計算対象,日付,内容,金額（円）,保有金融機関,大項目,中項目,メモ,振替,ID
+1,2026/04/04,手入力,-300,なし,食費,未分類,,0,mf-none
+1,2026/04/06,手入力,-100,,食費,未分類,,0,mf-blank
+`
+    const rows = parseMfCsv(csv, 'mf.csv').transactions
+    expect(rows.map((row) => row.accountName)).toEqual(['現金', null])
+  })
+
+  it('keeps transfers even though Money Forward marks them 計算対象=0', () => {
+    const csv = `計算対象,日付,内容,金額（円）,保有金融機関,大項目,中項目,メモ,振替,ID
+0,2026/04/04,カード引落,-20000,銀行口座,未分類,未分類,,1,mf-out
+0,2026/04/04,入金,20000,クレジットカード,未分類,未分類,,1,mf-in
+0,2026/04/05,対象外の支出,-300,現金,食費,未分類,,0,mf-off
+`
+    const rows = parseMfCsv(csv, 'mf.csv').transactions
+    expect(rows.map((row) => [row.externalId, row.type, row.include])).toEqual([
+      ['mf-out', 'transfer', true],
+      ['mf-in', 'transfer', true],
+      ['mf-off', 'expense', false],
+    ])
+  })
+
   it('rejects a file that is not the income/expense detail export', () => {
     const parsed = parseMfCsv('日付,金額\n2026-01-01,10\n', 'other.csv')
     expect(parsed.fileError).toContain('収入・支出詳細')

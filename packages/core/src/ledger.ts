@@ -427,6 +427,160 @@ export function deleteTransaction(ledger: Ledger, id: string, clock: Clock): Led
   }
 }
 
+/** Live transfers missing a source or a destination, newest first. */
+export function unresolvedTransfers(ledger: Ledger): Transaction[] {
+  return visibleTransactions(ledger).filter(
+    (transaction) =>
+      transaction.type === 'transfer' &&
+      (transaction.accountId === null || transaction.transferAccountId === null),
+  )
+}
+
+/**
+ * Set the missing side of a transfer. Only the two account ids change, so the
+ * import provenance stays and a later re-import keeps the chosen account.
+ */
+export function setTransferAccounts(
+  ledger: Ledger,
+  id: string,
+  sides: { accountId: string | null; transferAccountId: string | null },
+  clock: Clock,
+): Ledger {
+  const existing = ledger.transactions.find((item) => item.id === id && item.deletedAt === null)
+  if (!existing) throw new LedgerError('not_found')
+  if (existing.type !== 'transfer') throw new LedgerError('invalid_type')
+  checkTransferSides('transfer', sides.accountId, sides.transferAccountId)
+  if (sides.accountId && sides.accountId !== existing.accountId) {
+    usableAccount(ledger, sides.accountId)
+  }
+  if (sides.transferAccountId && sides.transferAccountId !== existing.transferAccountId) {
+    usableAccount(ledger, sides.transferAccountId)
+  }
+  if (
+    sides.accountId === existing.accountId &&
+    sides.transferAccountId === existing.transferAccountId
+  ) {
+    return ledger
+  }
+  return {
+    ...ledger,
+    transactions: ledger.transactions.map((item) =>
+      item.id === id
+        ? touch(item, clock.now, {
+            accountId: sides.accountId,
+            transferAccountId: sides.transferAccountId,
+          })
+        : item,
+    ),
+  }
+}
+
+export interface UnresolvedTransferGroup {
+  /** Stable while the rows stay unresolved: side, known account, folded description. */
+  key: string
+  missing: 'source' | 'destination'
+  /** The side that is already set. */
+  knownAccountId: string
+  description: string
+  transactions: Transaction[]
+  totalYen: number
+  firstDate: string
+  lastDate: string
+}
+
+/**
+ * One-sided transfers grouped by what is missing, the account that is set,
+ * and the description. A monthly card repayment lands in one group.
+ * Larger groups first.
+ */
+export function groupUnresolvedTransfers(ledger: Ledger): UnresolvedTransferGroup[] {
+  const groups = new Map<string, UnresolvedTransferGroup>()
+  for (const transaction of unresolvedTransfers(ledger)) {
+    const missing = transaction.accountId === null ? 'source' : 'destination'
+    const knownAccountId = (transaction.accountId ?? transaction.transferAccountId) as string
+    const description = transaction.description.trim()
+    const key = `${missing}\u001f${knownAccountId}\u001f${fold(description)}`
+    const group = groups.get(key)
+    if (group) {
+      group.transactions.push(transaction)
+      group.totalYen += transaction.amountYen
+      if (transaction.date < group.firstDate) group.firstDate = transaction.date
+      if (transaction.date > group.lastDate) group.lastDate = transaction.date
+    } else {
+      groups.set(key, {
+        key,
+        missing,
+        knownAccountId,
+        description,
+        transactions: [transaction],
+        totalYen: transaction.amountYen,
+        firstDate: transaction.date,
+        lastDate: transaction.date,
+      })
+    }
+  }
+  return [...groups.values()].sort(
+    (a, b) =>
+      b.transactions.length - a.transactions.length ||
+      b.lastDate.localeCompare(a.lastDate) ||
+      a.key.localeCompare(b.key),
+  )
+}
+
+/**
+ * Fill the missing side of several one-sided transfers with one account.
+ * Rows that already have both sides are left alone. Throws without changing
+ * anything when the account is unusable or equals a row's other side.
+ */
+export function fillTransferSides(
+  ledger: Ledger,
+  ids: readonly string[],
+  accountId: string,
+  clock: Clock,
+): Ledger {
+  usableAccount(ledger, accountId)
+  let next = ledger
+  for (const id of ids) {
+    const transaction = next.transactions.find((item) => item.id === id && item.deletedAt === null)
+    if (!transaction) throw new LedgerError('not_found')
+    if (transaction.type !== 'transfer') throw new LedgerError('invalid_type')
+    if (transaction.accountId === null) {
+      next = setTransferAccounts(
+        next,
+        id,
+        { accountId, transferAccountId: transaction.transferAccountId },
+        clock,
+      )
+    } else if (transaction.transferAccountId === null) {
+      next = setTransferAccounts(
+        next,
+        id,
+        { accountId: transaction.accountId, transferAccountId: accountId },
+        clock,
+      )
+    }
+  }
+  return next
+}
+
+/** Latest YYYY-MM that has a live transaction, or null for an empty ledger. */
+export function latestYearMonth(ledger: Ledger): string | null {
+  let latest: string | null = null
+  for (const transaction of ledger.transactions) {
+    if (transaction.deletedAt !== null) continue
+    const month = transaction.date.slice(0, 7)
+    if (latest === null || month > latest) latest = month
+  }
+  return latest
+}
+
+/** True when the month has at least one live transaction. */
+export function hasTransactionsIn(ledger: Ledger, yearMonth: string): boolean {
+  return ledger.transactions.some(
+    (transaction) => transaction.deletedAt === null && transaction.date.startsWith(`${yearMonth}-`),
+  )
+}
+
 export function addCategory(ledger: Ledger, input: CategoryInput, clock: Clock): Ledger {
   const name = requireName(input.name)
   if (!CATEGORY_KINDS.includes(input.kind)) throw new LedgerError('invalid_category')

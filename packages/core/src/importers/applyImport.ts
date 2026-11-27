@@ -13,6 +13,7 @@ import {
   type Transaction,
 } from '../types'
 import { planTransferRows } from './pairTransfers'
+import { IMPORT_SOURCE_NAMES } from './registry'
 import type { ImportParseResult, NormalizedTransaction } from './types'
 
 export interface ImportReport {
@@ -20,7 +21,10 @@ export interface ImportReport {
   updated: number
   unchanged: number
   excluded: number
+  /** 計算対象=0 rows that were never imported. */
   skipped: number
+  /** The inflow side of a paired transfer. Booked on the outflow row instead. */
+  paired: number
 }
 
 const EMPTY_REPORT: ImportReport = {
@@ -29,6 +33,7 @@ const EMPTY_REPORT: ImportReport = {
   unchanged: 0,
   excluded: 0,
   skipped: 0,
+  paired: 0,
 }
 
 export function guessAccountKind(name: string): AccountKind {
@@ -142,7 +147,7 @@ function ensureSource(ledger: Ledger, parsed: ImportParseResult): Ledger {
   const source: ImportSource = {
     id,
     adapterId: parsed.adapterId,
-    name: parsed.adapterId === 'mf-csv' ? 'マネーフォワードME' : parsed.adapterId,
+    name: IMPORT_SOURCE_NAMES[parsed.adapterId] ?? parsed.adapterId,
     delivery: 'file',
     accountId: null,
     institution: parsed.adapterId === 'mf-csv' ? 'マネーフォワードME' : null,
@@ -255,7 +260,7 @@ export function applyImport(
     if (planned.counterpart) {
       const existing = findExisting(current, sourceId, row)
       if (!existing || existing.deletedAt) {
-        report.skipped += 1
+        report.paired += 1
         continue
       }
       current = {

@@ -1,5 +1,7 @@
 export { CategoriesPage } from './CategoriesPage'
+export { ImportSection } from './ImportSection'
 export { SettingsPage } from './SettingsPage'
 export { SummaryPage } from './SummaryPage'
 export { TransactionsPage } from './TransactionsPage'
+export { UnresolvedTransfers } from './UnresolvedTransfers'
 export { ACCOUNT_KIND_LABEL, messageOf } from './text'

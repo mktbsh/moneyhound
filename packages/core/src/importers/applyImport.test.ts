@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test'
 import { projectAccountBalances, summarizeMonth } from '../aggregate'
-import { seedLedger } from '../ledger'
+import {
+  fillTransferSides,
+  groupUnresolvedTransfers,
+  seedLedger,
+  setTransferAccounts,
+  unresolvedTransfers,
+} from '../ledger'
 import { applyImport } from './applyImport'
 import { parseMfCsv } from './mfCsv'
 
@@ -113,6 +119,7 @@ describe('applyImport', () => {
 `
     const parsed = parseMfCsv(csv, 'mf.csv')
     const first = applyImport(seedLedger(), parsed, clock())
+    expect(first.report).toMatchObject({ inserted: 3, paired: 1, skipped: 0 })
     const transfers = first.ledger.transactions.filter(
       (transaction) => transaction.type === 'transfer',
     )
@@ -144,6 +151,7 @@ describe('applyImport', () => {
 
     const second = applyImport(first.ledger, parsed, clock())
     expect(second.report.inserted).toBe(0)
+    expect(second.report.paired).toBe(1)
     expect(
       second.ledger.transactions.filter((transaction) => transaction.deletedAt === null),
     ).toHaveLength(
@@ -202,5 +210,156 @@ describe('applyImport', () => {
       (transaction) => transaction.source.externalId === 'mf-cash',
     )
     expect(row?.transferAccountId).toBe('acct_cash')
+  })
+})
+
+describe('fixing one-sided imported transfers', () => {
+  const LONE = `計算対象,日付,内容,金額（円）,保有金融機関,大項目,中項目,メモ,振替,ID
+1,2026/04/04,カード引落,-20000,銀行口座,未分類,未分類,,1,mf-out
+1,2026/04/05,入金,5000,現金,未分類,未分類,,1,mf-in
+`
+
+  it('lists both rows, keeps the chosen side through re-import, and validates input', () => {
+    const parsed = parseMfCsv(LONE, 'mf.csv')
+    const imported = applyImport(seedLedger(), parsed, clock()).ledger
+    const open = unresolvedTransfers(imported)
+    expect(open.map((row) => row.source.externalId).sort()).toEqual(['mf-in', 'mf-out'])
+
+    const out = open.find((row) => row.source.externalId === 'mf-out')!
+    const inflow = open.find((row) => row.source.externalId === 'mf-in')!
+    const fixClock = { now: '2026-04-09T00:00:00.000Z', id: () => 'unused' }
+    let fixed = setTransferAccounts(
+      imported,
+      out.id,
+      { accountId: out.accountId, transferAccountId: 'acct_card' },
+      fixClock,
+    )
+    fixed = setTransferAccounts(
+      fixed,
+      inflow.id,
+      { accountId: 'acct_bank', transferAccountId: inflow.transferAccountId },
+      fixClock,
+    )
+    expect(unresolvedTransfers(fixed)).toEqual([])
+    const fixedOut = fixed.transactions.find((row) => row.id === out.id)!
+    expect(fixedOut).toMatchObject({
+      accountId: 'acct_bank',
+      transferAccountId: 'acct_card',
+      revision: out.revision + 1,
+      updatedAt: fixClock.now,
+      source: out.source,
+    })
+    // The bank sent 20000 to the card and 5000 to cash.
+    const balances = new Map(
+      projectAccountBalances(fixed).map((item) => [item.accountId, item.balanceYen]),
+    )
+    expect(balances.get('acct_card')).toBe(20000)
+    expect(balances.get('acct_bank')).toBe(-25000)
+
+    const again = applyImport(fixed, parsed, clock())
+    expect(again.report).toMatchObject({ inserted: 0, updated: 0, unchanged: 2 })
+    expect(unresolvedTransfers(again.ledger)).toEqual([])
+
+    expect(() =>
+      setTransferAccounts(
+        fixed,
+        out.id,
+        { accountId: 'acct_bank', transferAccountId: 'acct_bank' },
+        fixClock,
+      ),
+    ).toThrow('invalid_transfer')
+    expect(() =>
+      setTransferAccounts(fixed, out.id, { accountId: null, transferAccountId: null }, fixClock),
+    ).toThrow('invalid_transfer')
+    expect(() =>
+      setTransferAccounts(
+        fixed,
+        out.id,
+        { accountId: 'acct_bank', transferAccountId: 'missing' },
+        fixClock,
+      ),
+    ).toThrow('invalid_account')
+    expect(
+      setTransferAccounts(
+        fixed,
+        out.id,
+        { accountId: 'acct_bank', transferAccountId: 'acct_card' },
+        fixClock,
+      ),
+    ).toBe(fixed)
+  })
+})
+
+describe('grouped fixes for one-sided transfers', () => {
+  const MONTHLY = `計算対象,日付,内容,金額（円）,保有金融機関,大項目,中項目,メモ,振替,ID
+0,2026/01/27,ミドリカード,-30000,銀行口座,未分類,未分類,,1,m1
+0,2026/02/27,ミドリカード,-28000,銀行口座,未分類,未分類,,1,m2
+0,2026/03/27,ﾐﾄﾞﾘｶｰﾄﾞ,-31000,銀行口座,未分類,未分類,,1,m3
+0,2026/03/10,ATM,-10000,銀行口座,未分類,未分類,,1,m4
+0,2026/03/11,入金,5000,現金,未分類,未分類,,1,m5
+`
+
+  it('groups by side, account, and folded description and fills a group at once', () => {
+    const ledger = applyImport(seedLedger(), parseMfCsv(MONTHLY, 'mf.csv'), clock()).ledger
+    const groups = groupUnresolvedTransfers(ledger)
+    expect(groups.map((group) => [group.missing, group.transactions.length])).toEqual([
+      ['destination', 3],
+      ['source', 1],
+      ['destination', 1],
+    ])
+    const card = groups[0]
+    expect(card).toMatchObject({
+      knownAccountId: 'acct_bank',
+      totalYen: 89000,
+      firstDate: '2026-01-27',
+      lastDate: '2026-03-27',
+    })
+    const fixClock = { now: '2026-04-09T00:00:00.000Z', id: () => 'unused' }
+    const fixed = fillTransferSides(
+      ledger,
+      card.transactions.map((row) => row.id),
+      'acct_card',
+      fixClock,
+    )
+    expect(unresolvedTransfers(fixed)).toHaveLength(2)
+    expect(
+      fixed.transactions
+        .filter((row) => card.transactions.some((item) => item.id === row.id))
+        .every((row) => row.accountId === 'acct_bank' && row.transferAccountId === 'acct_card'),
+    ).toBe(true)
+
+    const inflow = groups[1]
+    const both = fillTransferSides(
+      fixed,
+      inflow.transactions.map((row) => row.id),
+      'acct_bank',
+      fixClock,
+    )
+    expect(both.transactions.find((row) => row.id === inflow.transactions[0].id)).toMatchObject({
+      accountId: 'acct_bank',
+      transferAccountId: 'acct_cash',
+    })
+
+    // The account on the set side cannot also be the missing side.
+    expect(() =>
+      fillTransferSides(
+        ledger,
+        card.transactions.map((row) => row.id),
+        'acct_bank',
+        fixClock,
+      ),
+    ).toThrow('invalid_transfer')
+    expect(() =>
+      fillTransferSides(
+        ledger,
+        card.transactions.map((row) => row.id),
+        'missing',
+        fixClock,
+      ),
+    ).toThrow('invalid_account')
+
+    const again = applyImport(both, parseMfCsv(MONTHLY, 'mf.csv'), clock())
+    expect(again.report).toMatchObject({ inserted: 0, updated: 0 })
+    expect(unresolvedTransfers(again.ledger)).toHaveLength(1)
   })
 })

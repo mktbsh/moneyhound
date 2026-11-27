@@ -3,6 +3,8 @@ import {
   addTransaction,
   assertLedger,
   deleteTransaction,
+  hasTransactionsIn,
+  latestYearMonth,
   seedLedger,
   updateTransaction,
 } from './ledger'
@@ -83,5 +85,22 @@ describe('ledger mutations', () => {
       ),
     ).toThrow(/invalid_transfer/)
     expect(() => assertLedger({ ...inflow, schemaVersion: 1 })).toThrow(/unsupported_schema/)
+  })
+})
+
+describe('latestYearMonth', () => {
+  it('finds the newest month with a live row', () => {
+    let n = 0
+    const clock = { now: '2026-04-08T00:00:00.000Z', id: () => `t-${++n}` }
+    let ledger = seedLedger()
+    expect(latestYearMonth(ledger)).toBeNull()
+    ledger = addTransaction(ledger, { ...input, date: '2025-12-31' }, clock)
+    ledger = addTransaction(ledger, { ...input, date: '2026-03-01' }, clock)
+    expect(latestYearMonth(ledger)).toBe('2026-03')
+    expect(hasTransactionsIn(ledger, '2025-12')).toBe(true)
+    expect(hasTransactionsIn(ledger, '2026-11')).toBe(false)
+    const march = ledger.transactions.find((row) => row.date === '2026-03-01')!
+    ledger = deleteTransaction(ledger, march.id, clock)
+    expect(latestYearMonth(ledger)).toBe('2025-12')
   })
 })

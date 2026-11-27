@@ -5,7 +5,7 @@ moneyhound is a single-user household ledger. The owner decides merges. Cloud ag
 ## Product boundaries
 
 - One person. Japanese UI. Amounts are integer yen.
-- Manual entry in this phase. No bank login, no credential storage, no server-side scraping.
+- Manual entry and CSV import the owner starts. No bank login, no credential storage, no server-side scraping.
 - Static hosting only (Cloudflare Pages or Workers static assets). No application server, no D1, no Workers API.
 - System of record is a JSON ledger. A copy lives in IndexedDB. Optional sync uses the owner's Google Drive **My Drive** folder `moneyhound/`, scope `https://www.googleapis.com/auth/drive.file` only.
 - If `VITE_GOOGLE_CLIENT_ID` is empty the app must stay fully usable offline. Tests and local development run in that mode.
@@ -20,7 +20,10 @@ bun run check     # bun fmt --check, oxlint, typecheck, bun test
 bun run test:e2e  # Playwright via bunx, local-only, desktop and mobile
 bun run build     # typecheck and production build (apps/web/dist)
 bun run verify:formal  # core money property tests, then the Lean proofs
+bun run try:import     # owner only: run the importers on CSVs in .private/statements (gitignored)
 ```
+
+`.private/` is for the owner's real statements and outputs. It is gitignored. Agents read it only when the owner asks in that session, never copy or quote real rows into commits, issues, or PRs, and never build fixtures from it. `try:import` prints counts and totals only unless `--rows N` is passed; `--out` writes a backup JSON there to load in the app.
 
 Package manager is Bun 1.4.5 (`packageManager` and CI). Typecheck uses `typescript@7.0.2` (`tsc` launches the native Go compiler). Node is 26.13.1 (`.node-version` and `engines`); CI installs that Node for Playwright. Format with `bun fmt`. Lint with oxlint: Bun 1.4.5 has `bun fmt` and does not ship `bun lint` (`bun --help` lists `fmt` only, and `bun lint` looks for a package script). Do not add ESLint or Prettier.
 
@@ -58,7 +61,7 @@ Backup files are `{ app: "moneyhound", schemaVersion, exportedAt, ledger }`. The
 Last-writer-wins is per record, not per file.
 
 1. Remember the ledger we last successfully synced (`SyncState.base`) and the Drive etag.
-2. Read the remote ledger. If it is not valid JSON of schema 1, stop and do not upload.
+2. Read the remote ledger. If it is not valid JSON of schema 2, stop and do not upload.
 3. Three-way merge base, local, and remote (`mergeLedgers`). A missing row is not a delete. Both sides changed the same id: higher `revision` wins, then later `updatedAt`, then a deterministic canonical JSON tie-break. The result lists those conflicts.
 4. Upload the merged ledger with `If-Match` on the etag we just read. On HTTP 412, re-read and merge again (up to three attempts).
 5. Save the merged ledger as both the local copy and the new base.
@@ -72,28 +75,34 @@ The Drive client creates a visible folder named `moneyhound` and `ledger.json` i
 Parsers implement `ImporterAdapter` in `packages/core/src/importers`:
 
 ```ts
-parse({ bytes, fileName }) => ImportParseResult
+parse({ bytes, fileName, accountName?, positiveAmountIs? }) => ImportParseResult
 ```
 
-`applyImport` turns normalized rows into ledger records. It creates missing accounts and categories, applies category rules when the file has no category, and matches existing rows by `(sourceId, externalId)` or, when there is no external id, `(sourceId, contentHash)`. The same file imported twice does not duplicate rows. `計算対象=0` soft-deletes a previously imported id. A row that disappears from a later file is not deleted.
+`accountName` names the account for a statement that does not (an institution CSV is one account); Money Forward ignores it. `positiveAmountIs` says how a single signed amount column reads (`expense` for card statements). The settings screen passes the chosen account's name, and `expense` when that account's kind is `card`.
+
+`applyImport` turns normalized rows into ledger records. It creates missing accounts and categories, applies category rules when the file has no category, and matches existing rows by `(sourceId, externalId)` or, when there is no external id, `(sourceId, contentHash)`. The same file imported twice does not duplicate rows. `計算対象=0` soft-deletes a previously imported id. A row that disappears from a later file is not deleted. `ImportReport` counts `inserted`, `updated`, `unchanged`, `excluded` (tombstoned by `計算対象=0`), `skipped` (`計算対象=0` rows never imported), and `paired` (the inflow side of a paired transfer, booked on the outflow row).
+
+The settings screen 「明細の取り込み」 picks an adapter (and an account for `institution-csv`), parses the file in the browser, shows a dry-run `ImportReport`, parse errors, and how many one-sided transfers will remain, and commits only on 「取り込む」. The file never leaves the device.
+
+One-sided transfers (振替先未設定 / 振替元未設定) are listed across all months in an optional settings section 「振替の相手口座（任意）」. The owner chose continuity over exactness: old Money Forward history often cannot be resolved, and a one-sided transfer only shifts account balances, never monthly income, expense, or balance, so the app does not nag about them on the transactions screen. `groupUnresolvedTransfers` groups them by missing side, known account, and folded description (a monthly card repayment is one group), and `fillTransferSides` sets the missing side of a whole group. `setTransferAccounts` changes one row. Neither touches provenance, so re-import keeps the chosen account.
 
 Registered now:
 
 | id                  | status                                                                                                 |
 | ------------------- | ------------------------------------------------------------------------------------------------------ |
-| `mf-csv`            | Parser and `applyImport` path. No import button yet.                                                   |
-| `institution-csv`   | Planned. Official CSV/OFX the owner downloads (banks, cards, brokerages, e-money).                     |
+| `mf-csv`            | Parser, `applyImport`, and the settings import screen.                                                 |
+| `institution-csv`   | Generic header-detected CSV for one bank, card, or e-money account. OFX is not read yet.               |
 | `browser-extension` | Planned. A Chrome extension reads a statement page the owner already opened and sends rows to the app. |
 
 Adapters must not collect passwords, cookies, or passkeys, and must not automate login. `pnsk-lab/mnie` was consulted for the provider boundary (adapter id, normalized account/transaction, stable external reference). None of its login, session, or passkey code is in this repo and it must not be added.
 
-`mf-csv` reads Money Forward ME 「収入・支出詳細」. Columns, header folding, and the UTF-8 / UTF-16 / Shift_JIS decode order follow `ossannote2025/mf-csv-viewer` (MIT). See `THIRD_PARTY_NOTICES.md`. Positive amounts are income, negative amounts are expense, `振替=1` is a transfer, and the MF `ID` column is `externalId`.
+`mf-csv` reads Money Forward ME 「収入・支出詳細」. Columns, header folding, and the UTF-8 / UTF-16 / Shift_JIS decode order follow `ossannote2025/mf-csv-viewer` (MIT). See `THIRD_PARTY_NOTICES.md`. Positive amounts are income, negative amounts are expense, `振替=1` is a transfer, and the MF `ID` column is `externalId`. A real MF export marks every `振替=1` row `計算対象=0` (transfers are outside 収支), so the parser ignores `計算対象` on transfer rows and keeps them. `計算対象=0` still excludes income and expense rows. `保有金融機関` 「なし」 (a hand-entered MF row with no account) is booked on 現金 (`MF_NO_ACCOUNT_TARGET`). In a real export only a small share of transfer rows pair, even with a one-week window, so most MF transfers arrive one-sided (card repayments show only the bank side).
 
 Money Forward CSV export requires MF Premium. After the owner cancels Money Forward, new history has to come from each institution's own CSV/OFX (or the extension). Do not assume MF CSV will remain available. The MF parser stays so the owner can import history exported before cancellation.
 
 Category rules (`contains` or `regex` on the description, optional `sourceId` / `accountId`) run at import time when the source did not name a category. Lower `priority` wins. This is the replacement for Money Forward's exact-match learning. The settings screen can add a contains-rule. Regex is in the model and is applied by `categoryFromRules`; the screen does not edit regex yet.
 
-Institution-specific column maps (SMBC, WAON, and others) are not ported in this phase. Add them as new adapters with synthetic fixtures, not real statements.
+`institution-csv` finds the header row in the first 30 lines by known Japanese column names (`ALIASES` in `institutionCsv.ts`): a date column, and either 出金/入金 style columns or one amount column, plus optional description, balance, and memo columns. Dates accept `YYYY/M/D`, `YYYY.M.D`, `YYYY年M月D日`, `YYYYMMDD`, and Reiwa (`R8.4.2`, `令和8年4月2日`). Rows with no date (totals) or no amount (前月繰越) are skipped silently. There is no row id, so the content hash includes the running balance when the file has one. Every row is income or expense; a bank row that is really a move between the owner's own accounts (card payment, ATM) is counted as expense until the owner edits it. A new column name goes into `ALIASES` with a fictional fixture. An institution whose layout the aliases cannot read gets its own adapter, with synthetic fixtures, not real statements.
 
 ## Verification before a PR
 

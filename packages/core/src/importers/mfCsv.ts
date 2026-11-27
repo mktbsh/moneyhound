@@ -50,6 +50,19 @@ function blankCategory(value: string): string | null {
   return trimmed
 }
 
+/**
+ * MF writes 「なし」 for a hand-entered row with no account. Those were cash
+ * in practice, so they go to the seeded 現金 account instead of an account named なし.
+ */
+export const MF_NO_ACCOUNT = 'なし'
+export const MF_NO_ACCOUNT_TARGET = '現金'
+
+function institutionName(raw: string): string | null {
+  const name = raw.trim()
+  if (!name) return null
+  return name === MF_NO_ACCOUNT ? MF_NO_ACCOUNT_TARGET : name
+}
+
 export function parseMfCsv(text: string, fileName: string): ImportParseResult {
   const result: ImportParseResult = {
     adapterId: 'mf-csv',
@@ -100,7 +113,7 @@ export function parseMfCsv(text: string, fileName: string): ImportParseResult {
       continue
     }
     const description = unguard(cell(row, index.content), ownExport)
-    const accountName = unguard(cell(row, index.institution), ownExport) || null
+    const accountName = institutionName(unguard(cell(row, index.institution), ownExport))
     const categoryLarge = blankCategory(unguard(cell(row, index.large), ownExport))
     const categoryMiddle = blankCategory(unguard(cell(row, index.middle), ownExport))
     const memo = unguard(cell(row, index.memo), ownExport)
@@ -117,7 +130,9 @@ export function parseMfCsv(text: string, fileName: string): ImportParseResult {
       categoryMiddle,
       accountName,
       externalId,
-      include: flag(cell(row, index.isTarget), true),
+      // Money Forward exports every 振替=1 row with 計算対象=0, because transfers
+      // never count toward 収支. For a transfer the flag says nothing, so keep it.
+      include: transfer || flag(cell(row, index.isTarget), true),
       contentHash: contentHash([
         date,
         String(Math.abs(amount)),
