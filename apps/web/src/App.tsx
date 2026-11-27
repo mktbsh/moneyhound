@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { formatYearMonth, shiftYearMonth } from '@moneyhound/core'
+import {
+  formatYearMonth,
+  hasTransactionsIn,
+  latestYearMonth,
+  shiftYearMonth,
+} from '@moneyhound/core'
 import {
   CategoriesPage,
   messageOf,
@@ -40,6 +45,12 @@ export function App() {
   }, [])
 
   const ledger = snapshot.ledger
+  const latest = ledger ? latestYearMonth(ledger) : null
+  const showJump =
+    ledger !== null &&
+    latest !== null &&
+    latest !== snapshot.yearMonth &&
+    !hasTransactionsIn(ledger, snapshot.yearMonth)
 
   async function sync(): Promise<string> {
     try {
@@ -106,6 +117,19 @@ export function App() {
               onClick={() => setYearMonth(shiftYearMonth(snapshot.yearMonth, 1))}
             >
               ›
+            </button>
+          </div>
+        ) : null}
+        {showJump && (route === 'summary' || route === 'transactions') ? (
+          <div className="toolbar jump" data-testid="jump-latest">
+            <p className="note">この月の明細はありません。</p>
+            <button
+              type="button"
+              className="ghost"
+              data-testid="jump-latest-month"
+              onClick={() => setYearMonth(latest)}
+            >
+              {formatYearMonth(latest)}へ
             </button>
           </div>
         ) : null}

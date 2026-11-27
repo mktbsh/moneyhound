@@ -9,6 +9,7 @@ const LEDGER_MESSAGES: Record<string, string> = {
   invalid_name: '名前は1〜40文字で入力してください。',
   duplicate_name: '同じ名前がすでにあります。',
   invalid_pattern: 'ルールの条件を確認してください。',
+  invalid_type: '振替の明細ではありません。',
   invalid_text: '内容は500文字以内にしてください。',
   invalid_backup: 'このファイルは moneyhound のバックアップではありません。',
   unsupported_schema: 'このバックアップの形式には、このバージョンでは対応していません。',

@@ -45,6 +45,17 @@ export interface ImportParseResult {
 export interface ImportInput {
   bytes: Uint8Array
   fileName: string
+  /**
+   * Account the rows belong to, for statements that do not name one
+   * (an institution CSV is one account). Money Forward ignores it.
+   */
+  accountName?: string
+  /**
+   * How a single signed amount column reads. Card statements list spending
+   * as positive (`expense`). Bank statements with one signed column list
+   * deposits as positive (`income`). When omitted the adapter guesses from the header.
+   */
+  positiveAmountIs?: 'income' | 'expense'
 }
 
 /**

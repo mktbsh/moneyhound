@@ -46,7 +46,7 @@ export function TransactionsPage({
   return (
     <>
       <div className="toolbar">
-        <p className="note">この月の手入力です。</p>
+        <p className="note">この月の明細です。</p>
         <button
           type="button"
           className="primary"

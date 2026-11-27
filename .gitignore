@@ -12,3 +12,6 @@ coverage
 *.log
 .DS_Store
 verification/lean/.lake
+
+# Owner statements and outputs for local checks. Never commit.
+.private

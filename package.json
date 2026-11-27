@@ -18,6 +18,7 @@
     "test": "bun test packages apps",
     "test:e2e": "bunx playwright test",
     "check": "bun fmt --check --no-script && oxlint . && bun run typecheck && bun test packages apps",
+    "try:import": "bun scripts/try-import.ts",
     "verify:formal": "bun test packages/core/src/invariants && cd verification/lean && lake build"
   },
   "devDependencies": {

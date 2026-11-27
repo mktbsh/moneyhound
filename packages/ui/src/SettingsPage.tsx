@@ -12,7 +12,9 @@ import {
   type AccountKind,
   type Ledger,
 } from '@moneyhound/core'
+import { ImportSection } from './ImportSection'
 import { ACCOUNT_KIND_LABEL, messageOf } from './text'
+import { UnresolvedTransfers } from './UnresolvedTransfers'
 
 type Commit = (ledger: Ledger) => Promise<void>
 
@@ -37,6 +39,8 @@ export function SettingsPage({
     <>
       <AccountSection ledger={ledger} onCommit={onCommit} />
       <RuleSection ledger={ledger} onCommit={onCommit} />
+      <ImportSection ledger={ledger} onCommit={onCommit} />
+      <UnresolvedTransfers ledger={ledger} onCommit={onCommit} />
       <BackupSection ledger={ledger} onCommit={onCommit} />
       <DriveSection syncNote={syncNote} driveConfigured={driveConfigured} onSync={onSync} />
     </>
